@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -24,6 +25,126 @@ BROWSER_EXECUTABLE_NAMES = {
     "chrome": {"google-chrome", "google-chrome-stable", "chrome"},
     "chromium": {"chromium", "chromium-browser"},
 }
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _browser_home() -> Path:
+    override = os.environ.get("DCTL_BROWSER_HOME")
+    if override:
+        return Path(override).expanduser().resolve()
+    return PROJECT_ROOT / ".dctl" / "browser"
+
+
+def _sessions_dir() -> Path:
+    path = _browser_home() / "sessions"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _profiles_dir() -> Path:
+    path = _browser_home() / "profiles"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _normalize_session_name(name: str) -> str:
+    cleaned = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "-" for ch in name.strip().lower())
+    cleaned = cleaned.strip("-_")
+    if not cleaned:
+        raise DctlError("INVALID_SELECTOR", f"Invalid browser session name '{name}'.")
+    return cleaned
+
+
+def _session_metadata_path(name: str) -> Path:
+    return _sessions_dir() / f"{_normalize_session_name(name)}.json"
+
+
+def _session_profile_dir(name: str) -> Path:
+    path = _profiles_dir() / _normalize_session_name(name)
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _read_session_record(name: str) -> dict[str, Any]:
+    path = _session_metadata_path(name)
+    if not path.exists():
+        raise DctlError(
+            "ELEMENT_NOT_FOUND",
+            f"No browser session named '{name}' exists.",
+            suggestion="Start one with `dctl browser start --session NAME`.",
+        )
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise DctlError("BACKEND_FAILURE", f"Browser session metadata is invalid: {path}") from exc
+
+
+def _write_session_record(name: str, record: dict[str, Any]) -> dict[str, Any]:
+    path = _session_metadata_path(name)
+    normalized_name = _normalize_session_name(name)
+    record = {**record, "name": normalized_name}
+    path.write_text(json.dumps(record, indent=2, sort_keys=True), encoding="utf-8")
+    return record
+
+
+def _session_endpoint(record: dict[str, Any]) -> str:
+    port = record.get("port")
+    if port is None:
+        raise DctlError("BACKEND_FAILURE", f"Browser session '{record.get('name')}' does not have a port.")
+    return f"http://127.0.0.1:{int(port)}"
+
+
+def _is_pid_alive(pid: int | None) -> bool:
+    if not pid:
+        return False
+    try:
+        os.kill(int(pid), 0)
+    except OSError:
+        return False
+    return True
+
+
+def list_sessions() -> dict[str, Any]:
+    items = []
+    for path in sorted(_sessions_dir().glob("*.json")):
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+        running = _is_pid_alive(record.get("pid"))
+        endpoint = None
+        if record.get("port") is not None:
+            endpoint = f"http://127.0.0.1:{record['port']}"
+        items.append(
+            {
+                **record,
+                "running": running,
+                "endpoint": endpoint,
+            }
+        )
+    return {"items": items}
+
+
+def session_info(name: str) -> dict[str, Any]:
+    record = _read_session_record(name)
+    endpoint = _session_endpoint(record)
+    reachable = False
+    try:
+        _fetch_json(f"{endpoint}/json/version")
+        reachable = True
+    except DctlError:
+        reachable = False
+    return {
+        **record,
+        "running": _is_pid_alive(record.get("pid")),
+        "reachable": reachable,
+        "endpoint": endpoint,
+    }
 
 
 def _fetch_json(url: str, method: str = "GET") -> Any:
@@ -57,9 +178,25 @@ def _fetch_text(url: str, method: str = "GET") -> str:
         ) from exc
 
 
-def normalize_endpoint(endpoint: str | None = None, port: int | None = None) -> str:
+def normalize_endpoint(
+    endpoint: str | None = None,
+    port: int | None = None,
+    session_name: str | None = None,
+) -> str:
     if endpoint:
         return endpoint.rstrip("/")
+    if session_name:
+        record = _read_session_record(session_name)
+        base = _session_endpoint(record)
+        try:
+            _fetch_json(f"{base}/json/version")
+        except DctlError as exc:
+            raise DctlError(
+                "CAPABILITY_UNAVAILABLE",
+                f"Browser session '{record['name']}' is not reachable.",
+                suggestion=f"Restart it with `dctl browser start --session {record['name']}`.",
+            ) from exc
+        return base
     if port is not None:
         return f"http://127.0.0.1:{port}"
     for candidate in range(9222, 9233):
@@ -76,10 +213,16 @@ def normalize_endpoint(endpoint: str | None = None, port: int | None = None) -> 
     )
 
 
-def browser_version(endpoint: str | None = None, port: int | None = None) -> dict[str, Any]:
-    base = normalize_endpoint(endpoint, port)
+def browser_version(
+    endpoint: str | None = None,
+    port: int | None = None,
+    session_name: str | None = None,
+) -> dict[str, Any]:
+    base = normalize_endpoint(endpoint, port, session_name=session_name)
     payload = _fetch_json(f"{base}/json/version")
     payload["endpoint"] = base
+    if session_name:
+        payload["session"] = _normalize_session_name(session_name)
     return payload
 
 
@@ -87,10 +230,17 @@ def _page_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [item for item in items if item.get("type") == "page"]
 
 
-def list_targets(endpoint: str | None = None, port: int | None = None) -> dict[str, Any]:
-    base = normalize_endpoint(endpoint, port)
+def list_targets(
+    endpoint: str | None = None,
+    port: int | None = None,
+    session_name: str | None = None,
+) -> dict[str, Any]:
+    base = normalize_endpoint(endpoint, port, session_name=session_name)
     targets = _fetch_json(f"{base}/json/list")
-    return {"endpoint": base, "items": targets}
+    payload = {"endpoint": base, "items": targets}
+    if session_name:
+        payload["session"] = _normalize_session_name(session_name)
+    return payload
 
 
 def _parse_debug_port(cmdline: str) -> int | None:
@@ -165,6 +315,13 @@ def _candidate_ports(endpoint: str | None = None, port: int | None = None, proc_
     return unique
 
 
+def _pid_for_debug_port(port: int, proc_root: str = "/proc") -> int | None:
+    for record in _discover_browser_processes(proc_root=proc_root):
+        if int(record.get("debug_port") or 0) == int(port):
+            return int(record["pid"])
+    return None
+
+
 def discover(endpoint: str | None = None, port: int | None = None, proc_root: str = "/proc") -> dict[str, Any]:
     processes = _discover_browser_processes(proc_root=proc_root)
     process_by_port = {record["debug_port"]: record for record in processes if record.get("debug_port") is not None}
@@ -195,14 +352,19 @@ def discover(endpoint: str | None = None, port: int | None = None, proc_root: st
             }
         )
     unavailable = [record for record in processes if record.get("debug_port") is None]
-    return {"attachable": attachable, "unavailable": unavailable}
+    return {"attachable": attachable, "unavailable": unavailable, "managed_sessions": list_sessions()["items"]}
 
 
-def attach(endpoint: str | None = None, port: int | None = None, proc_root: str = "/proc") -> dict[str, Any]:
-    if endpoint or port is not None:
-        base = normalize_endpoint(endpoint, port)
-        version = browser_version(endpoint=base)
-        tabs_payload = tabs(endpoint=base)
+def attach(
+    endpoint: str | None = None,
+    port: int | None = None,
+    proc_root: str = "/proc",
+    session_name: str | None = None,
+) -> dict[str, Any]:
+    if endpoint or port is not None or session_name:
+        base = normalize_endpoint(endpoint, port, session_name=session_name)
+        version = browser_version(endpoint=base, session_name=session_name)
+        tabs_payload = tabs(endpoint=base, session_name=session_name)
         return {"endpoint": base, "version": version, "tabs": tabs_payload["items"]}
 
     discovered = discover(proc_root=proc_root)
@@ -285,10 +447,33 @@ def start_browser(
     port: int | None = None,
     url: str | None = None,
     headless: bool = False,
+    session_name: str | None = None,
 ) -> dict[str, Any]:
     browser_exec = resolve_browser_executable(app, executable)
-    selected_port = port or _find_free_port()
-    user_data_dir = tempfile.mkdtemp(prefix="dctl-browser-")
+    normalized_session = _normalize_session_name(session_name) if session_name else None
+    existing_record: dict[str, Any] | None = None
+    if normalized_session:
+        try:
+            existing_record = _read_session_record(normalized_session)
+            base = _session_endpoint(existing_record)
+            _fetch_json(f"{base}/json/version")
+            payload = {
+                **existing_record,
+                "endpoint": base,
+                "running": _is_pid_alive(existing_record.get("pid")),
+                "reachable": True,
+                "managed": True,
+                "existing_session": True,
+            }
+            return payload
+        except DctlError:
+            pass
+
+    selected_port = port or (int(existing_record["port"]) if existing_record and existing_record.get("port") else None) or _find_free_port()
+    if normalized_session:
+        user_data_dir = str(_session_profile_dir(normalized_session))
+    else:
+        user_data_dir = tempfile.mkdtemp(prefix="dctl-browser-")
     command = [
         browser_exec,
         f"--remote-debugging-port={selected_port}",
@@ -296,6 +481,8 @@ def start_browser(
         "--no-first-run",
         "--no-default-browser-check",
     ]
+    if normalized_session:
+        command.append("--restore-last-session")
     if headless:
         command.append("--headless=new")
     if url:
@@ -306,15 +493,35 @@ def start_browser(
     while time.monotonic() < deadline:
         try:
             _fetch_json(f"{endpoint}/json/version")
-            return {
+            actual_pid = _pid_for_debug_port(selected_port) or process.pid
+            payload = {
                 "app": app or Path(browser_exec).name,
                 "executable": browser_exec,
-                "pid": process.pid,
+                "pid": actual_pid,
                 "port": selected_port,
                 "endpoint": endpoint,
                 "user_data_dir": user_data_dir,
                 "headless": headless,
             }
+            if normalized_session:
+                previous_created_at = existing_record.get("created_at") if existing_record else None
+                record = {
+                    "name": normalized_session,
+                    "app": app or Path(browser_exec).name,
+                    "executable": browser_exec,
+                    "pid": actual_pid,
+                    "port": selected_port,
+                    "user_data_dir": user_data_dir,
+                    "headless": headless,
+                    "created_at": previous_created_at or _now_iso(),
+                    "last_started_at": _now_iso(),
+                    "last_stopped_at": existing_record.get("last_stopped_at") if existing_record else None,
+                }
+                _write_session_record(normalized_session, record)
+                payload["session"] = normalized_session
+                payload["managed"] = True
+                payload["existing_session"] = False
+            return payload
         except DctlError:
             time.sleep(0.2)
     process.terminate()
@@ -324,39 +531,97 @@ def start_browser(
     )
 
 
-def stop_browser(pid: int, user_data_dir: str | None = None) -> dict[str, Any]:
+def stop_browser(
+    pid: int | None = None,
+    user_data_dir: str | None = None,
+    session_name: str | None = None,
+) -> dict[str, Any]:
+    normalized_session = _normalize_session_name(session_name) if session_name else None
+    record: dict[str, Any] | None = None
+    if normalized_session:
+        record = _read_session_record(normalized_session)
+        pid = pid or int(record["pid"]) if record.get("pid") else None
+        if pid is None and record.get("port") is not None:
+            pid = _pid_for_debug_port(int(record["port"]))
+        user_data_dir = user_data_dir or str(record.get("user_data_dir") or "")
+    if pid is None:
+        raise DctlError("INVALID_SELECTOR", "Stopping a browser requires `--pid` or `--session`.")
     try:
         os.kill(pid, signal.SIGTERM)
     except ProcessLookupError:
-        raise DctlError("ELEMENT_NOT_FOUND", f"No browser process with pid {pid} exists.")
-    if user_data_dir:
+        if not normalized_session:
+            raise DctlError("ELEMENT_NOT_FOUND", f"No browser process with pid {pid} exists.")
+    removed = False
+    if user_data_dir and not normalized_session:
         shutil.rmtree(user_data_dir, ignore_errors=True)
-    return {"pid": pid, "stopped": True, "user_data_dir_removed": bool(user_data_dir)}
+        removed = True
+    payload = {"pid": pid, "stopped": True, "user_data_dir_removed": removed}
+    if normalized_session and record is not None:
+        updated = {
+            **record,
+            "pid": None,
+            "last_stopped_at": _now_iso(),
+        }
+        _write_session_record(normalized_session, updated)
+        payload["session"] = normalized_session
+        payload["managed"] = True
+        payload["user_data_dir"] = user_data_dir
+    return payload
 
 
-def open_target(url: str, endpoint: str | None = None, port: int | None = None) -> dict[str, Any]:
-    base = normalize_endpoint(endpoint, port)
+def open_target(
+    url: str,
+    endpoint: str | None = None,
+    port: int | None = None,
+    session_name: str | None = None,
+) -> dict[str, Any]:
+    base = normalize_endpoint(endpoint, port, session_name=session_name)
     encoded = parse.quote(url, safe=":/?&=%#,+")
     target = _fetch_json(f"{base}/json/new?{encoded}", method="PUT")
-    return {"endpoint": base, "target": target}
+    payload = {"endpoint": base, "target": target}
+    if session_name:
+        payload["session"] = _normalize_session_name(session_name)
+    return payload
 
 
-def activate_target(target: str, endpoint: str | None = None, port: int | None = None) -> dict[str, Any]:
-    base = normalize_endpoint(endpoint, port)
-    resolved = resolve_target(target, endpoint=base)
+def activate_target(
+    target: str,
+    endpoint: str | None = None,
+    port: int | None = None,
+    session_name: str | None = None,
+) -> dict[str, Any]:
+    base = normalize_endpoint(endpoint, port, session_name=session_name)
+    resolved = resolve_target(target, endpoint=base, session_name=session_name)
     result = _fetch_text(f"{base}/json/activate/{resolved['id']}")
-    return {"endpoint": base, "target": resolved, "result": result}
+    payload = {"endpoint": base, "target": resolved, "result": result}
+    if session_name:
+        payload["session"] = _normalize_session_name(session_name)
+    return payload
 
 
-def close_target(target: str, endpoint: str | None = None, port: int | None = None) -> dict[str, Any]:
-    base = normalize_endpoint(endpoint, port)
-    resolved = resolve_target(target, endpoint=base)
+def close_target(
+    target: str,
+    endpoint: str | None = None,
+    port: int | None = None,
+    session_name: str | None = None,
+) -> dict[str, Any]:
+    base = normalize_endpoint(endpoint, port, session_name=session_name)
+    resolved = resolve_target(target, endpoint=base, session_name=session_name)
     result = _fetch_text(f"{base}/json/close/{resolved['id']}")
-    return {"endpoint": base, "target": resolved, "result": result}
+    payload = {"endpoint": base, "target": resolved, "result": result}
+    if session_name:
+        payload["session"] = _normalize_session_name(session_name)
+    return payload
 
 
-def resolve_target(target: str, *, endpoint: str | None = None, port: int | None = None) -> dict[str, Any]:
-    base = normalize_endpoint(endpoint, port)
+def resolve_target(
+    target: str,
+    *,
+    endpoint: str | None = None,
+    port: int | None = None,
+    session_name: str | None = None,
+) -> dict[str, Any]:
+    base = normalize_endpoint(endpoint, port, session_name=session_name)
     items = _fetch_json(f"{base}/json/list")
     exact = [item for item in items if target in {item.get("id"), item.get("title"), item.get("url")}]
     if len(exact) == 1:
@@ -386,16 +651,31 @@ def resolve_target(target: str, *, endpoint: str | None = None, port: int | None
     )
 
 
-def tabs(endpoint: str | None = None, port: int | None = None, include_non_pages: bool = False) -> dict[str, Any]:
-    payload = list_targets(endpoint=endpoint, port=port)
+def tabs(
+    endpoint: str | None = None,
+    port: int | None = None,
+    include_non_pages: bool = False,
+    session_name: str | None = None,
+) -> dict[str, Any]:
+    payload = list_targets(endpoint=endpoint, port=port, session_name=session_name)
     items = payload["items"] if include_non_pages else _page_items(payload["items"])
-    return {"endpoint": payload["endpoint"], "items": items}
+    result = {"endpoint": payload["endpoint"], "items": items}
+    if session_name:
+        result["session"] = _normalize_session_name(session_name)
+    return result
 
 
-def active_tab(endpoint: str | None = None, port: int | None = None) -> dict[str, Any]:
-    base = normalize_endpoint(endpoint, port)
-    target = resolve_target("active", endpoint=base)
-    return {"endpoint": base, "target": target}
+def active_tab(
+    endpoint: str | None = None,
+    port: int | None = None,
+    session_name: str | None = None,
+) -> dict[str, Any]:
+    base = normalize_endpoint(endpoint, port, session_name=session_name)
+    target = resolve_target("active", endpoint=base, session_name=session_name)
+    payload = {"endpoint": base, "target": target}
+    if session_name:
+        payload["session"] = _normalize_session_name(session_name)
+    return payload
 
 
 @dataclass(slots=True)
@@ -519,9 +799,14 @@ def _run_in_target_session(target: dict[str, Any], operation: Any) -> Any:
     return asyncio.run(runner())
 
 
-def _prepare_page_target(target_selector: str, endpoint: str | None = None, port: int | None = None) -> tuple[str, dict[str, Any]]:
-    base = normalize_endpoint(endpoint, port)
-    target = resolve_target(target_selector, endpoint=base)
+def _prepare_page_target(
+    target_selector: str,
+    endpoint: str | None = None,
+    port: int | None = None,
+    session_name: str | None = None,
+) -> tuple[str, dict[str, Any]]:
+    base = normalize_endpoint(endpoint, port, session_name=session_name)
+    target = resolve_target(target_selector, endpoint=base, session_name=session_name)
     if target.get("type") != "page":
         raise DctlError("ACTION_NOT_SUPPORTED", "Only page targets are supported for page interaction commands.")
     return base, target
@@ -562,12 +847,16 @@ def evaluate(
     *,
     endpoint: str | None = None,
     port: int | None = None,
+    session_name: str | None = None,
     await_promise: bool = True,
 ) -> dict[str, Any]:
-    base, target = _prepare_page_target(target_selector, endpoint, port)
+    base, target = _prepare_page_target(target_selector, endpoint, port, session_name=session_name)
     _send_command(target, "Page.enable")
     result = _runtime_evaluate(target, expression, await_promise=await_promise)
-    return {"endpoint": base, "target": target, "result": _extract_remote_value(result)}
+    payload = {"endpoint": base, "target": target, "result": _extract_remote_value(result)}
+    if session_name:
+        payload["session"] = _normalize_session_name(session_name)
+    return payload
 
 
 def snapshot(
@@ -575,9 +864,10 @@ def snapshot(
     *,
     endpoint: str | None = None,
     port: int | None = None,
+    session_name: str | None = None,
     text_limit: int = 4000,
 ) -> dict[str, Any]:
-    base, target = _prepare_page_target(target_selector, endpoint, port)
+    base, target = _prepare_page_target(target_selector, endpoint, port, session_name=session_name)
     expression = f"""
 (() => {{
   const active = document.activeElement;
@@ -601,7 +891,10 @@ def snapshot(
 }})()
 """.strip()
     result = _runtime_evaluate(target, expression, await_promise=True, return_by_value=True)
-    return {"endpoint": base, "target": target, "result": _extract_remote_value(result)}
+    payload = {"endpoint": base, "target": target, "result": _extract_remote_value(result)}
+    if session_name:
+        payload["session"] = _normalize_session_name(session_name)
+    return payload
 
 
 def dom(
@@ -609,11 +902,12 @@ def dom(
     *,
     endpoint: str | None = None,
     port: int | None = None,
+    session_name: str | None = None,
     selector: str | None = None,
     depth: int = 3,
     pierce: bool = True,
 ) -> dict[str, Any]:
-    base, target = _prepare_page_target(target_selector, endpoint, port)
+    base, target = _prepare_page_target(target_selector, endpoint, port, session_name=session_name)
     async def operation(session: _AsyncTargetSession) -> dict[str, Any]:
         root = await session.call("DOM.getDocument", {"depth": depth, "pierce": pierce})
         if not selector:
@@ -628,14 +922,20 @@ def dom(
 
     payload = _run_in_target_session(target, operation)
     if not selector:
-        return {"endpoint": base, "target": target, "root": payload["root"]}
-    return {
+        result = {"endpoint": base, "target": target, "root": payload["root"]}
+        if session_name:
+            result["session"] = _normalize_session_name(session_name)
+        return result
+    result = {
         "endpoint": base,
         "target": target,
         "selector": payload["selector"],
         "node": payload["node"],
         "outer_html": payload["outer_html"],
     }
+    if session_name:
+        result["session"] = _normalize_session_name(session_name)
+    return result
 
 
 def accessibility_tree(
@@ -643,9 +943,10 @@ def accessibility_tree(
     *,
     endpoint: str | None = None,
     port: int | None = None,
+    session_name: str | None = None,
     selector: str | None = None,
 ) -> dict[str, Any]:
-    base, target = _prepare_page_target(target_selector, endpoint, port)
+    base, target = _prepare_page_target(target_selector, endpoint, port, session_name=session_name)
     if selector:
         async def operation(session: _AsyncTargetSession) -> dict[str, Any]:
             root = await session.call("DOM.getDocument", {"depth": 1, "pierce": True})
@@ -656,9 +957,15 @@ def accessibility_tree(
             return await session.call("Accessibility.getPartialAXTree", {"nodeId": node_id, "fetchRelatives": True})
 
         payload = _run_in_target_session(target, operation)
-        return {"endpoint": base, "target": target, "selector": selector, "nodes": payload.get("nodes", [])}
+        result = {"endpoint": base, "target": target, "selector": selector, "nodes": payload.get("nodes", [])}
+        if session_name:
+            result["session"] = _normalize_session_name(session_name)
+        return result
     payload = _send_command(target, "Accessibility.getFullAXTree")
-    return {"endpoint": base, "target": target, "nodes": payload.get("nodes", [])}
+    result = {"endpoint": base, "target": target, "nodes": payload.get("nodes", [])}
+    if session_name:
+        result["session"] = _normalize_session_name(session_name)
+    return result
 
 
 def text(
@@ -666,6 +973,7 @@ def text(
     *,
     endpoint: str | None = None,
     port: int | None = None,
+    session_name: str | None = None,
     selector: str | None = None,
 ) -> dict[str, Any]:
     if selector:
@@ -688,9 +996,12 @@ def text(
   activeTag: document.activeElement ? document.activeElement.tagName : null
 }))()
 """.strip()
-    base, target = _prepare_page_target(target_selector, endpoint, port)
+    base, target = _prepare_page_target(target_selector, endpoint, port, session_name=session_name)
     result = _runtime_evaluate(target, expression, await_promise=True, return_by_value=True)
-    return {"endpoint": base, "target": target, "result": _extract_remote_value(result)}
+    payload = {"endpoint": base, "target": target, "result": _extract_remote_value(result)}
+    if session_name:
+        payload["session"] = _normalize_session_name(session_name)
+    return payload
 
 
 def selection(
@@ -698,6 +1009,7 @@ def selection(
     *,
     endpoint: str | None = None,
     port: int | None = None,
+    session_name: str | None = None,
 ) -> dict[str, Any]:
     expression = """
 (() => ({
@@ -705,9 +1017,12 @@ def selection(
   activeTag: document.activeElement ? document.activeElement.tagName : null
 }))()
 """.strip()
-    base, target = _prepare_page_target(target_selector, endpoint, port)
+    base, target = _prepare_page_target(target_selector, endpoint, port, session_name=session_name)
     result = _runtime_evaluate(target, expression, await_promise=True, return_by_value=True)
-    return {"endpoint": base, "target": target, "result": _extract_remote_value(result)}
+    payload = {"endpoint": base, "target": target, "result": _extract_remote_value(result)}
+    if session_name:
+        payload["session"] = _normalize_session_name(session_name)
+    return payload
 
 
 def wait_url(
@@ -716,16 +1031,20 @@ def wait_url(
     *,
     endpoint: str | None = None,
     port: int | None = None,
+    session_name: str | None = None,
     timeout: float = 10.0,
     interval_ms: int = 250,
 ) -> dict[str, Any]:
-    base, target = _prepare_page_target(target_selector, endpoint, port)
+    base, target = _prepare_page_target(target_selector, endpoint, port, session_name=session_name)
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         result = _runtime_evaluate(target, "location.href", await_promise=True, return_by_value=True)
         href = _extract_remote_value(result)
         if needle in str(href):
-            return {"endpoint": base, "target": target, "url": href, "matched": needle}
+            payload = {"endpoint": base, "target": target, "url": href, "matched": needle}
+            if session_name:
+                payload["session"] = _normalize_session_name(session_name)
+            return payload
         time.sleep(max(interval_ms, 50) / 1000)
     raise DctlError("TIMEOUT", f"Timed out waiting for URL containing '{needle}'.")
 
@@ -736,11 +1055,12 @@ def wait_selector(
     *,
     endpoint: str | None = None,
     port: int | None = None,
+    session_name: str | None = None,
     timeout: float = 10.0,
     interval_ms: int = 250,
     visible: bool = False,
 ) -> dict[str, Any]:
-    base, target = _prepare_page_target(target_selector, endpoint, port)
+    base, target = _prepare_page_target(target_selector, endpoint, port, session_name=session_name)
     expression = f"""
 (() => {{
   const node = document.querySelector({json.dumps(selector)});
@@ -759,7 +1079,10 @@ def wait_selector(
         result = _runtime_evaluate(target, expression, await_promise=True, return_by_value=True)
         payload = _extract_remote_value(result)
         if payload:
-            return {"endpoint": base, "target": target, "selector": selector, "result": payload}
+            result = {"endpoint": base, "target": target, "selector": selector, "result": payload}
+            if session_name:
+                result["session"] = _normalize_session_name(session_name)
+            return result
         time.sleep(max(interval_ms, 50) / 1000)
     raise DctlError("TIMEOUT", f"Timed out waiting for selector '{selector}'.")
 
@@ -782,8 +1105,9 @@ def click(
     *,
     endpoint: str | None = None,
     port: int | None = None,
+    session_name: str | None = None,
 ) -> dict[str, Any]:
-    base, target = _prepare_page_target(target_selector, endpoint, port)
+    base, target = _prepare_page_target(target_selector, endpoint, port, session_name=session_name)
     async def operation(session: _AsyncTargetSession) -> dict[str, int]:
         await session.call("Page.bringToFront")
         root = await session.call("DOM.getDocument", {"depth": 1, "pierce": True})
@@ -806,13 +1130,16 @@ def click(
         return {"x": x, "y": y}
 
     coords = _run_in_target_session(target, operation)
-    return {
+    result = {
         "endpoint": base,
         "target": target,
         "selector": selector,
         "x": coords["x"],
         "y": coords["y"],
     }
+    if session_name:
+        result["session"] = _normalize_session_name(session_name)
+    return result
 
 
 def type_text(
@@ -821,10 +1148,11 @@ def type_text(
     *,
     endpoint: str | None = None,
     port: int | None = None,
+    session_name: str | None = None,
     selector: str | None = None,
     clear: bool = False,
 ) -> dict[str, Any]:
-    base, target = _prepare_page_target(target_selector, endpoint, port)
+    base, target = _prepare_page_target(target_selector, endpoint, port, session_name=session_name)
     _send_command(target, "Page.bringToFront")
     if selector:
         expression = f"""
@@ -859,7 +1187,10 @@ def type_text(
 """.strip(),
         )
     _send_command(target, "Input.insertText", {"text": text_value})
-    return {"endpoint": base, "target": target, "selector": selector, "text": text_value}
+    result = {"endpoint": base, "target": target, "selector": selector, "text": text_value}
+    if session_name:
+        result["session"] = _normalize_session_name(session_name)
+    return result
 
 
 def press_key(
@@ -868,8 +1199,9 @@ def press_key(
     *,
     endpoint: str | None = None,
     port: int | None = None,
+    session_name: str | None = None,
 ) -> dict[str, Any]:
-    base, target = _prepare_page_target(target_selector, endpoint, port)
+    base, target = _prepare_page_target(target_selector, endpoint, port, session_name=session_name)
     _send_command(target, "Page.bringToFront")
     spec = parse_key_combo(combo)
     key_down = {
@@ -896,7 +1228,7 @@ def press_key(
             "nativeVirtualKeyCode": spec.key_code,
         },
     )
-    return {
+    result = {
         "endpoint": base,
         "target": target,
         "combo": combo,
@@ -904,6 +1236,9 @@ def press_key(
         "key": spec.key,
         "code": spec.code,
     }
+    if session_name:
+        result["session"] = _normalize_session_name(session_name)
+    return result
 
 
 def send_command(
@@ -913,11 +1248,15 @@ def send_command(
     *,
     endpoint: str | None = None,
     port: int | None = None,
+    session_name: str | None = None,
 ) -> dict[str, Any]:
-    base, target = _prepare_page_target(target_selector, endpoint, port)
+    base, target = _prepare_page_target(target_selector, endpoint, port, session_name=session_name)
     params = json.loads(params_json) if params_json else {}
     result = _send_command(target, method, params)
-    return {"endpoint": base, "target": target, "method": method, "params": params, "result": result}
+    payload = {"endpoint": base, "target": target, "method": method, "params": params, "result": result}
+    if session_name:
+        payload["session"] = _normalize_session_name(session_name)
+    return payload
 
 
 def batch(
@@ -926,6 +1265,7 @@ def batch(
     *,
     endpoint: str | None = None,
     port: int | None = None,
+    session_name: str | None = None,
 ) -> dict[str, Any]:
     try:
         operations = json.loads(operations_json)
@@ -939,9 +1279,9 @@ def batch(
             raise DctlError("INVALID_SELECTOR", "Each batch operation must include an `op` field.")
         op = str(operation["op"])
         if op == "activate":
-            results.append(activate_target(target_selector, endpoint=endpoint, port=port))
+            results.append(activate_target(target_selector, endpoint=endpoint, port=port, session_name=session_name))
         elif op == "click":
-            results.append(click(target_selector, str(operation["selector"]), endpoint=endpoint, port=port))
+            results.append(click(target_selector, str(operation["selector"]), endpoint=endpoint, port=port, session_name=session_name))
         elif op == "type":
             results.append(
                 type_text(
@@ -949,14 +1289,15 @@ def batch(
                     str(operation.get("text", "")),
                     endpoint=endpoint,
                     port=port,
+                    session_name=session_name,
                     selector=operation.get("selector"),
                     clear=bool(operation.get("clear", False)),
                 )
             )
         elif op == "press":
-            results.append(press_key(target_selector, str(operation["combo"]), endpoint=endpoint, port=port))
+            results.append(press_key(target_selector, str(operation["combo"]), endpoint=endpoint, port=port, session_name=session_name))
         elif op == "eval":
-            results.append(evaluate(target_selector, str(operation["expression"]), endpoint=endpoint, port=port))
+            results.append(evaluate(target_selector, str(operation["expression"]), endpoint=endpoint, port=port, session_name=session_name))
         elif op == "wait-selector":
             results.append(
                 wait_selector(
@@ -964,6 +1305,7 @@ def batch(
                     str(operation["selector"]),
                     endpoint=endpoint,
                     port=port,
+                    session_name=session_name,
                     timeout=float(operation.get("timeout", 10.0)),
                     interval_ms=int(operation.get("interval", 250)),
                     visible=bool(operation.get("visible", False)),
@@ -976,16 +1318,32 @@ def batch(
                     str(operation["needle"]),
                     endpoint=endpoint,
                     port=port,
+                    session_name=session_name,
                     timeout=float(operation.get("timeout", 10.0)),
                     interval_ms=int(operation.get("interval", 250)),
                 )
             )
         elif op == "snapshot":
-            results.append(snapshot(target_selector, endpoint=endpoint, port=port, text_limit=int(operation.get("text_limit", 4000))))
+            results.append(
+                snapshot(
+                    target_selector,
+                    endpoint=endpoint,
+                    port=port,
+                    session_name=session_name,
+                    text_limit=int(operation.get("text_limit", 4000)),
+                )
+            )
         elif op == "text":
-            results.append(text(target_selector, endpoint=endpoint, port=port, selector=operation.get("selector")))
+            results.append(text(target_selector, endpoint=endpoint, port=port, session_name=session_name, selector=operation.get("selector")))
         elif op == "selection":
-            results.append(selection(target_selector, endpoint=endpoint, port=port))
+            results.append(selection(target_selector, endpoint=endpoint, port=port, session_name=session_name))
         else:
             raise DctlError("INVALID_SELECTOR", f"Unsupported browser batch op '{op}'.")
-    return {"endpoint": normalize_endpoint(endpoint, port), "target_selector": target_selector, "results": results}
+    payload = {
+        "endpoint": normalize_endpoint(endpoint, port, session_name=session_name),
+        "target_selector": target_selector,
+        "results": results,
+    }
+    if session_name:
+        payload["session"] = _normalize_session_name(session_name)
+    return payload
