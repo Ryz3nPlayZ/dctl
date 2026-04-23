@@ -67,6 +67,7 @@ dctl browser dom <TARGET> [--session NAME | --endpoint URL] [--selector CSS]
 dctl browser ax <TARGET> [--session NAME | --endpoint URL] [--selector CSS]
 dctl browser text <TARGET> [--session NAME | --endpoint URL] [--selector CSS]
 dctl browser selection <TARGET> [--session NAME | --endpoint URL]
+dctl browser caret <TARGET> [--session NAME | --endpoint URL] [--selector CSS] [--start N] [--end N]
 dctl browser click <TARGET> <CSS_SELECTOR> [--session NAME | --endpoint URL]
 dctl browser type <TARGET> <TEXT> [--session NAME | --endpoint URL] [--selector CSS] [--clear]
 dctl browser press <TARGET> <COMBO> [--session NAME | --endpoint URL]
@@ -148,6 +149,7 @@ The browser adapter supports both attachable existing debug-enabled browsers and
 - `dctl browser start --session work` creates a persistent profile under `.dctl/browser/profiles/work`
 - managed sessions keep browser login state, cookies, and profile data across restarts
 - managed sessions can be targeted by name with `--session` instead of raw ports
+- `dctl browser caret` places the cursor or selection inside inputs, textareas, and contenteditable regions when the page exposes them directly
 
 ## Worksheet Editing
 

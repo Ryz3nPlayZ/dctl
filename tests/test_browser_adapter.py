@@ -55,6 +55,28 @@ class BrowserAdapterTests(unittest.TestCase):
         self.assertEqual(calls[1][0], "Input.dispatchKeyEvent")
         self.assertEqual(calls[1][1]["commands"], ["insertParagraphSeparator"])
 
+    def test_caret_positions_input_selection(self) -> None:
+        from dctl.adapters import browser_cdp as module
+
+        with patch("dctl.adapters.browser_cdp._prepare_page_target", return_value=("http://127.0.0.1:9333", {"type": "page"})), patch(
+            "dctl.adapters.browser_cdp._runtime_evaluate",
+            return_value={"result": {"value": {"kind": "input", "selectionStart": 2, "selectionEnd": 5, "valueLength": 10}}},
+        ):
+            result = module.caret("active", selector="#box", start=2, end=5)
+        self.assertEqual(result["selector"], "#box")
+        self.assertEqual(result["result"]["kind"], "input")
+
+    def test_caret_positions_contenteditable_selection(self) -> None:
+        from dctl.adapters import browser_cdp as module
+
+        with patch("dctl.adapters.browser_cdp._prepare_page_target", return_value=("http://127.0.0.1:9333", {"type": "page"})), patch(
+            "dctl.adapters.browser_cdp._runtime_evaluate",
+            return_value={"result": {"value": {"kind": "contenteditable", "selection": "abc", "textLength": 10}}},
+        ):
+            result = module.caret("active", selector="#editor", start=1, end=3)
+        self.assertEqual(result["selector"], "#editor")
+        self.assertEqual(result["result"]["kind"], "contenteditable")
+
     def test_parse_debug_port_from_cmdline(self) -> None:
         self.assertEqual(_parse_debug_port("/usr/bin/google-chrome\0--remote-debugging-port=9333\0"), 9333)
         self.assertIsNone(_parse_debug_port("/usr/bin/google-chrome\0--profile-directory=Default\0"))

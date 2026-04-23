@@ -175,6 +175,15 @@ def build_parser() -> argparse.ArgumentParser:
     browser_selection.add_argument("--port", type=int)
     browser_selection.add_argument("--session")
 
+    browser_caret = browser_subparsers.add_parser("caret")
+    browser_caret.add_argument("target")
+    browser_caret.add_argument("--selector")
+    browser_caret.add_argument("--start", type=int)
+    browser_caret.add_argument("--end", type=int)
+    browser_caret.add_argument("--endpoint")
+    browser_caret.add_argument("--port", type=int)
+    browser_caret.add_argument("--session")
+
     browser_snapshot = browser_subparsers.add_parser("snapshot")
     browser_snapshot.add_argument("target")
     browser_snapshot.add_argument("--endpoint")
@@ -570,6 +579,16 @@ def dispatch(args: argparse.Namespace, manager: DesktopManager) -> Any:
             )
         if subcommand == "selection":
             return browser_cdp.selection(args.target, endpoint=args.endpoint, port=args.port, session_name=args.session)
+        if subcommand == "caret":
+            return browser_cdp.caret(
+                args.target,
+                endpoint=args.endpoint,
+                port=args.port,
+                session_name=args.session,
+                selector=args.selector,
+                start=args.start,
+                end=args.end,
+            )
         if subcommand == "snapshot":
             return browser_cdp.snapshot(
                 args.target,

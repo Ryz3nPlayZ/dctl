@@ -1025,6 +1025,90 @@ def selection(
     return payload
 
 
+def caret(
+    target_selector: str,
+    *,
+    endpoint: str | None = None,
+    port: int | None = None,
+    session_name: str | None = None,
+    selector: str | None = None,
+    start: int | None = None,
+    end: int | None = None,
+) -> dict[str, Any]:
+    base, target = _prepare_page_target(target_selector, endpoint, port, session_name=session_name)
+    start_json = "null" if start is None else str(int(start))
+    end_json = "null" if end is None else str(int(end))
+    selector_json = "null" if selector is None else json.dumps(selector)
+    expression = f"""
+(() => {{
+  const selector = {selector_json};
+  const start = {start_json};
+  const end = {end_json};
+  const root = selector ? document.querySelector(selector) : document.activeElement;
+  if (!root) return null;
+  if (root.focus) root.focus();
+  const isInput = typeof root.value === 'string' && typeof root.setSelectionRange === 'function';
+  if (isInput) {{
+    const valueLength = root.value.length;
+    const resolvedStart = start == null ? valueLength : Math.max(0, Math.min(start, valueLength));
+    const resolvedEnd = end == null ? resolvedStart : Math.max(0, Math.min(end, valueLength));
+    root.setSelectionRange(Math.min(resolvedStart, resolvedEnd), Math.max(resolvedStart, resolvedEnd));
+    return {{
+      kind: 'input',
+      selectionStart: root.selectionStart,
+      selectionEnd: root.selectionEnd,
+      valueLength,
+    }};
+  }}
+  const editable = root.isContentEditable || root.getAttribute?.('contenteditable') === 'true';
+  if (!editable) return null;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const positions = [];
+  let node;
+  let total = 0;
+  while ((node = walker.nextNode())) {{
+    const length = node.nodeValue ? node.nodeValue.length : 0;
+    positions.push({{node, start: total, end: total + length}});
+    total += length;
+  }}
+  const clamp = value => Math.max(0, Math.min(value, total));
+  const locate = value => {{
+    const target = clamp(value);
+    for (const entry of positions) {{
+      if (target >= entry.start && target <= entry.end) {{
+        return {{node: entry.node, offset: target - entry.start}};
+      }}
+    }}
+    if (positions.length) {{
+      const last = positions[positions.length - 1];
+      return {{node: last.node, offset: last.node.nodeValue ? last.node.nodeValue.length : 0}};
+    }}
+    return {{node: root, offset: 0}};
+  }};
+  const resolvedStart = start == null ? total : clamp(start);
+  const resolvedEnd = end == null ? resolvedStart : clamp(end);
+  const anchor = locate(Math.min(resolvedStart, resolvedEnd));
+  const focus = locate(Math.max(resolvedStart, resolvedEnd));
+  const range = document.createRange();
+  range.setStart(anchor.node, anchor.offset);
+  range.setEnd(focus.node, focus.offset);
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+  return {{
+    kind: 'contenteditable',
+    selection: String(selection),
+    textLength: total,
+  }};
+}})()
+""".strip()
+    result = _runtime_evaluate(target, expression, await_promise=True, return_by_value=True)
+    payload = {"endpoint": base, "target": target, "result": _extract_remote_value(result), "selector": selector}
+    if session_name:
+        payload["session"] = _normalize_session_name(session_name)
+    return payload
+
+
 def wait_url(
     target_selector: str,
     needle: str,
@@ -1344,6 +1428,18 @@ def batch(
             results.append(text(target_selector, endpoint=endpoint, port=port, session_name=session_name, selector=operation.get("selector")))
         elif op == "selection":
             results.append(selection(target_selector, endpoint=endpoint, port=port, session_name=session_name))
+        elif op == "caret":
+            results.append(
+                caret(
+                    target_selector,
+                    endpoint=endpoint,
+                    port=port,
+                    session_name=session_name,
+                    selector=operation.get("selector"),
+                    start=operation.get("start"),
+                    end=operation.get("end"),
+                )
+            )
         else:
             raise DctlError("INVALID_SELECTOR", f"Unsupported browser batch op '{op}'.")
     payload = {
