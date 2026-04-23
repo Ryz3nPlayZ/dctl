@@ -52,7 +52,14 @@ dctl scroll <DIRECTION> [--amount N]
 dctl screenshot [--window WINDOW_OR_SELECTOR] [--region X,Y,W,H] [--output PATH] [--base64]
 
 dctl browser start [--app brave|chrome|chromium] [--port PORT] [--url URL]
+dctl browser discover [--port PORT]
+dctl browser attach [--endpoint URL | --port PORT]
+dctl browser tabs [--endpoint URL] [--include-non-pages]
+dctl browser active-tab [--endpoint URL]
 dctl browser targets [--endpoint URL]
+dctl browser snapshot <TARGET> [--endpoint URL]
+dctl browser wait-url <TARGET> <NEEDLE> [--endpoint URL]
+dctl browser wait-selector <TARGET> <CSS_SELECTOR> [--endpoint URL] [--visible]
 dctl browser dom <TARGET> [--selector CSS]
 dctl browser ax <TARGET> [--selector CSS]
 dctl browser text <TARGET> [--selector CSS]
@@ -62,6 +69,7 @@ dctl browser type <TARGET> <TEXT> [--selector CSS] [--clear]
 dctl browser press <TARGET> <COMBO>
 dctl browser eval <TARGET> <JAVASCRIPT>
 dctl browser send <TARGET> <CDP_METHOD> [--params JSON]
+dctl browser batch <TARGET> <OPERATIONS_JSON>
 
 dctl libreoffice start [--port PORT] [--headless]
 dctl libreoffice docs [--port PORT]
@@ -128,6 +136,12 @@ For detailed app work, `dctl` now exposes text-native control surfaces instead o
 - `dctl xlsx ...`: direct Excel `.xlsx` inspection and editing through `openpyxl`
 
 This is the intended path for precise work in browser-hosted editors, LibreOffice, and Office file formats.
+
+The browser adapter also supports attaching to already-running debug-enabled browser sessions:
+
+- `dctl browser discover` scans for attachable local Chrome/Brave CDP endpoints
+- `dctl browser attach` binds to an existing endpoint instead of launching a disposable browser
+- `dctl browser tabs`, `active-tab`, `snapshot`, `wait-url`, `wait-selector`, and `batch` reduce round trips for agent workflows
 
 ## Worksheet Editing
 

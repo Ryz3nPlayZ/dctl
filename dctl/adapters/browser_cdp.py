@@ -19,6 +19,13 @@ import websockets
 from dctl.errors import DctlError
 
 
+BROWSER_EXECUTABLE_NAMES = {
+    "brave": {"brave", "brave-browser", "brave-browser-stable"},
+    "chrome": {"google-chrome", "google-chrome-stable", "chrome"},
+    "chromium": {"chromium", "chromium-browser"},
+}
+
+
 def _fetch_json(url: str, method: str = "GET") -> Any:
     req = request.Request(url, method=method)
     try:
@@ -76,10 +83,146 @@ def browser_version(endpoint: str | None = None, port: int | None = None) -> dic
     return payload
 
 
+def _page_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [item for item in items if item.get("type") == "page"]
+
+
 def list_targets(endpoint: str | None = None, port: int | None = None) -> dict[str, Any]:
     base = normalize_endpoint(endpoint, port)
     targets = _fetch_json(f"{base}/json/list")
     return {"endpoint": base, "items": targets}
+
+
+def _parse_debug_port(cmdline: str) -> int | None:
+    for token in cmdline.split("\0"):
+        if token.startswith("--remote-debugging-port="):
+            value = token.split("=", 1)[1].strip()
+            if value.isdigit():
+                return int(value)
+    return None
+
+
+def _classify_browser_app(command: str) -> str | None:
+    executable = Path(command).name.casefold()
+    for app, aliases in BROWSER_EXECUTABLE_NAMES.items():
+        if executable in aliases:
+            return app
+    return None
+
+
+def _discover_browser_processes(proc_root: str = "/proc") -> list[dict[str, Any]]:
+    root = Path(proc_root)
+    if not root.exists():
+        return []
+    items: list[dict[str, Any]] = []
+    for entry in root.iterdir():
+        if not entry.is_dir() or not entry.name.isdigit():
+            continue
+        cmdline_path = entry / "cmdline"
+        try:
+            raw = cmdline_path.read_bytes()
+        except OSError:
+            continue
+        if not raw:
+            continue
+        cmdline = raw.decode("utf-8", errors="ignore")
+        command = cmdline.split("\0", 1)[0]
+        app = _classify_browser_app(command)
+        if not app:
+            continue
+        items.append(
+            {
+                "pid": int(entry.name),
+                "command": command,
+                "app": app,
+                "debug_port": _parse_debug_port(cmdline),
+                "cmdline": [part for part in cmdline.split("\0") if part],
+            }
+        )
+    return items
+
+
+def _candidate_ports(endpoint: str | None = None, port: int | None = None, proc_root: str = "/proc") -> list[int]:
+    if port is not None:
+        return [port]
+    ports: list[int] = []
+    if endpoint:
+        parsed = parse.urlparse(endpoint)
+        if parsed.port:
+            ports.append(parsed.port)
+    for record in _discover_browser_processes(proc_root=proc_root):
+        if record.get("debug_port") is not None:
+            ports.append(int(record["debug_port"]))
+    for candidate in range(9222, 9233):
+        ports.append(candidate)
+    unique: list[int] = []
+    seen: set[int] = set()
+    for candidate in ports:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        unique.append(candidate)
+    return unique
+
+
+def discover(endpoint: str | None = None, port: int | None = None, proc_root: str = "/proc") -> dict[str, Any]:
+    processes = _discover_browser_processes(proc_root=proc_root)
+    process_by_port = {record["debug_port"]: record for record in processes if record.get("debug_port") is not None}
+    attachable: list[dict[str, Any]] = []
+    for candidate_port in _candidate_ports(endpoint=endpoint, port=port, proc_root=proc_root):
+        base = f"http://127.0.0.1:{candidate_port}"
+        try:
+            version = _fetch_json(f"{base}/json/version")
+            targets = _fetch_json(f"{base}/json/list")
+        except DctlError:
+            continue
+        record = process_by_port.get(candidate_port)
+        attachable.append(
+            {
+                "endpoint": base,
+                "port": candidate_port,
+                "browser": version.get("Browser"),
+                "process": record,
+                "page_count": len(_page_items(targets)),
+                "pages": [
+                    {
+                        "id": item.get("id"),
+                        "title": item.get("title"),
+                        "url": item.get("url"),
+                    }
+                    for item in _page_items(targets)
+                ],
+            }
+        )
+    unavailable = [record for record in processes if record.get("debug_port") is None]
+    return {"attachable": attachable, "unavailable": unavailable}
+
+
+def attach(endpoint: str | None = None, port: int | None = None, proc_root: str = "/proc") -> dict[str, Any]:
+    if endpoint or port is not None:
+        base = normalize_endpoint(endpoint, port)
+        version = browser_version(endpoint=base)
+        tabs_payload = tabs(endpoint=base)
+        return {"endpoint": base, "version": version, "tabs": tabs_payload["items"]}
+
+    discovered = discover(proc_root=proc_root)
+    if not discovered["attachable"]:
+        raise DctlError(
+            "CAPABILITY_UNAVAILABLE",
+            "No attachable browser session was found.",
+            suggestion="Enable remote debugging on the running browser or use `dctl browser start`.",
+        )
+    if len(discovered["attachable"]) > 1:
+        raise DctlError(
+            "MULTIPLE_MATCHES",
+            "Multiple attachable browser sessions were found.",
+            suggestion="Choose one with `--port` or `--endpoint`.",
+            details={"candidates": discovered["attachable"]},
+        )
+    item = discovered["attachable"][0]
+    version = browser_version(endpoint=item["endpoint"])
+    tabs_payload = tabs(endpoint=item["endpoint"])
+    return {"endpoint": item["endpoint"], "version": version, "tabs": tabs_payload["items"], "process": item.get("process")}
 
 
 def _browser_candidates(app: str | None = None) -> list[str]:
@@ -241,6 +384,18 @@ def resolve_target(target: str, *, endpoint: str | None = None, port: int | None
         f"Browser target selector '{target}' matched multiple tabs.",
         details={"candidates": partial[:20]},
     )
+
+
+def tabs(endpoint: str | None = None, port: int | None = None, include_non_pages: bool = False) -> dict[str, Any]:
+    payload = list_targets(endpoint=endpoint, port=port)
+    items = payload["items"] if include_non_pages else _page_items(payload["items"])
+    return {"endpoint": payload["endpoint"], "items": items}
+
+
+def active_tab(endpoint: str | None = None, port: int | None = None) -> dict[str, Any]:
+    base = normalize_endpoint(endpoint, port)
+    target = resolve_target("active", endpoint=base)
+    return {"endpoint": base, "target": target}
 
 
 @dataclass(slots=True)
@@ -415,6 +570,40 @@ def evaluate(
     return {"endpoint": base, "target": target, "result": _extract_remote_value(result)}
 
 
+def snapshot(
+    target_selector: str,
+    *,
+    endpoint: str | None = None,
+    port: int | None = None,
+    text_limit: int = 4000,
+) -> dict[str, Any]:
+    base, target = _prepare_page_target(target_selector, endpoint, port)
+    expression = f"""
+(() => {{
+  const active = document.activeElement;
+  const selection = window.getSelection ? String(window.getSelection()) : "";
+  const visibleText = document.body ? (document.body.innerText ?? document.body.textContent ?? "") : "";
+  return {{
+    title: document.title,
+    url: location.href,
+    readyState: document.readyState,
+    activeElement: active ? {{
+      tag: active.tagName ?? null,
+      id: active.id || null,
+      name: active.getAttribute ? active.getAttribute('name') : null,
+      ariaLabel: active.getAttribute ? active.getAttribute('aria-label') : null,
+      value: 'value' in active ? active.value : null
+    }} : null,
+    selection,
+    visibleText: visibleText.slice(0, {int(text_limit)}),
+    frameCount: window.frames.length
+  }};
+}})()
+""".strip()
+    result = _runtime_evaluate(target, expression, await_promise=True, return_by_value=True)
+    return {"endpoint": base, "target": target, "result": _extract_remote_value(result)}
+
+
 def dom(
     target_selector: str,
     *,
@@ -519,6 +708,60 @@ def selection(
     base, target = _prepare_page_target(target_selector, endpoint, port)
     result = _runtime_evaluate(target, expression, await_promise=True, return_by_value=True)
     return {"endpoint": base, "target": target, "result": _extract_remote_value(result)}
+
+
+def wait_url(
+    target_selector: str,
+    needle: str,
+    *,
+    endpoint: str | None = None,
+    port: int | None = None,
+    timeout: float = 10.0,
+    interval_ms: int = 250,
+) -> dict[str, Any]:
+    base, target = _prepare_page_target(target_selector, endpoint, port)
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        result = _runtime_evaluate(target, "location.href", await_promise=True, return_by_value=True)
+        href = _extract_remote_value(result)
+        if needle in str(href):
+            return {"endpoint": base, "target": target, "url": href, "matched": needle}
+        time.sleep(max(interval_ms, 50) / 1000)
+    raise DctlError("TIMEOUT", f"Timed out waiting for URL containing '{needle}'.")
+
+
+def wait_selector(
+    target_selector: str,
+    selector: str,
+    *,
+    endpoint: str | None = None,
+    port: int | None = None,
+    timeout: float = 10.0,
+    interval_ms: int = 250,
+    visible: bool = False,
+) -> dict[str, Any]:
+    base, target = _prepare_page_target(target_selector, endpoint, port)
+    expression = f"""
+(() => {{
+  const node = document.querySelector({json.dumps(selector)});
+  if (!node) return null;
+  if (!{json.dumps(visible)}) {{
+    return {{tag: node.tagName ?? null, text: node.innerText ?? node.textContent ?? ""}};
+  }}
+  const style = window.getComputedStyle(node);
+  const rect = node.getBoundingClientRect();
+  const shown = style && style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+  return shown ? {{tag: node.tagName ?? null, text: node.innerText ?? node.textContent ?? ""}} : null;
+}})()
+""".strip()
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        result = _runtime_evaluate(target, expression, await_promise=True, return_by_value=True)
+        payload = _extract_remote_value(result)
+        if payload:
+            return {"endpoint": base, "target": target, "selector": selector, "result": payload}
+        time.sleep(max(interval_ms, 50) / 1000)
+    raise DctlError("TIMEOUT", f"Timed out waiting for selector '{selector}'.")
 
 
 def _node_id_for_selector(target: dict[str, Any], selector: str) -> int:
@@ -675,3 +918,74 @@ def send_command(
     params = json.loads(params_json) if params_json else {}
     result = _send_command(target, method, params)
     return {"endpoint": base, "target": target, "method": method, "params": params, "result": result}
+
+
+def batch(
+    target_selector: str,
+    operations_json: str,
+    *,
+    endpoint: str | None = None,
+    port: int | None = None,
+) -> dict[str, Any]:
+    try:
+        operations = json.loads(operations_json)
+    except json.JSONDecodeError as exc:
+        raise DctlError("INVALID_SELECTOR", "Batch operations must be valid JSON.") from exc
+    if not isinstance(operations, list):
+        raise DctlError("INVALID_SELECTOR", "Batch operations must be a JSON array.")
+    results = []
+    for operation in operations:
+        if not isinstance(operation, dict) or "op" not in operation:
+            raise DctlError("INVALID_SELECTOR", "Each batch operation must include an `op` field.")
+        op = str(operation["op"])
+        if op == "activate":
+            results.append(activate_target(target_selector, endpoint=endpoint, port=port))
+        elif op == "click":
+            results.append(click(target_selector, str(operation["selector"]), endpoint=endpoint, port=port))
+        elif op == "type":
+            results.append(
+                type_text(
+                    target_selector,
+                    str(operation.get("text", "")),
+                    endpoint=endpoint,
+                    port=port,
+                    selector=operation.get("selector"),
+                    clear=bool(operation.get("clear", False)),
+                )
+            )
+        elif op == "press":
+            results.append(press_key(target_selector, str(operation["combo"]), endpoint=endpoint, port=port))
+        elif op == "eval":
+            results.append(evaluate(target_selector, str(operation["expression"]), endpoint=endpoint, port=port))
+        elif op == "wait-selector":
+            results.append(
+                wait_selector(
+                    target_selector,
+                    str(operation["selector"]),
+                    endpoint=endpoint,
+                    port=port,
+                    timeout=float(operation.get("timeout", 10.0)),
+                    interval_ms=int(operation.get("interval", 250)),
+                    visible=bool(operation.get("visible", False)),
+                )
+            )
+        elif op == "wait-url":
+            results.append(
+                wait_url(
+                    target_selector,
+                    str(operation["needle"]),
+                    endpoint=endpoint,
+                    port=port,
+                    timeout=float(operation.get("timeout", 10.0)),
+                    interval_ms=int(operation.get("interval", 250)),
+                )
+            )
+        elif op == "snapshot":
+            results.append(snapshot(target_selector, endpoint=endpoint, port=port, text_limit=int(operation.get("text_limit", 4000))))
+        elif op == "text":
+            results.append(text(target_selector, endpoint=endpoint, port=port, selector=operation.get("selector")))
+        elif op == "selection":
+            results.append(selection(target_selector, endpoint=endpoint, port=port))
+        else:
+            raise DctlError("INVALID_SELECTOR", f"Unsupported browser batch op '{op}'.")
+    return {"endpoint": normalize_endpoint(endpoint, port), "target_selector": target_selector, "results": results}

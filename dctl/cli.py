@@ -83,6 +83,14 @@ def build_parser() -> argparse.ArgumentParser:
     browser_stop.add_argument("--pid", type=int, required=True)
     browser_stop.add_argument("--user-data-dir")
 
+    browser_discover = browser_subparsers.add_parser("discover")
+    browser_discover.add_argument("--endpoint")
+    browser_discover.add_argument("--port", type=int)
+
+    browser_attach = browser_subparsers.add_parser("attach")
+    browser_attach.add_argument("--endpoint")
+    browser_attach.add_argument("--port", type=int)
+
     browser_version = browser_subparsers.add_parser("version")
     browser_version.add_argument("--endpoint")
     browser_version.add_argument("--port", type=int)
@@ -90,6 +98,15 @@ def build_parser() -> argparse.ArgumentParser:
     browser_targets = browser_subparsers.add_parser("targets")
     browser_targets.add_argument("--endpoint")
     browser_targets.add_argument("--port", type=int)
+
+    browser_tabs = browser_subparsers.add_parser("tabs")
+    browser_tabs.add_argument("--endpoint")
+    browser_tabs.add_argument("--port", type=int)
+    browser_tabs.add_argument("--include-non-pages", action="store_true")
+
+    browser_active_tab = browser_subparsers.add_parser("active-tab")
+    browser_active_tab.add_argument("--endpoint")
+    browser_active_tab.add_argument("--port", type=int)
 
     browser_open = browser_subparsers.add_parser("open")
     browser_open.add_argument("url")
@@ -138,6 +155,29 @@ def build_parser() -> argparse.ArgumentParser:
     browser_selection.add_argument("--endpoint")
     browser_selection.add_argument("--port", type=int)
 
+    browser_snapshot = browser_subparsers.add_parser("snapshot")
+    browser_snapshot.add_argument("target")
+    browser_snapshot.add_argument("--endpoint")
+    browser_snapshot.add_argument("--port", type=int)
+    browser_snapshot.add_argument("--text-limit", type=int, default=4000)
+
+    browser_wait_url = browser_subparsers.add_parser("wait-url")
+    browser_wait_url.add_argument("target")
+    browser_wait_url.add_argument("needle")
+    browser_wait_url.add_argument("--endpoint")
+    browser_wait_url.add_argument("--port", type=int)
+    browser_wait_url.add_argument("--timeout", type=float, default=10.0)
+    browser_wait_url.add_argument("--interval", type=int, default=250)
+
+    browser_wait_selector = browser_subparsers.add_parser("wait-selector")
+    browser_wait_selector.add_argument("target")
+    browser_wait_selector.add_argument("selector")
+    browser_wait_selector.add_argument("--endpoint")
+    browser_wait_selector.add_argument("--port", type=int)
+    browser_wait_selector.add_argument("--timeout", type=float, default=10.0)
+    browser_wait_selector.add_argument("--interval", type=int, default=250)
+    browser_wait_selector.add_argument("--visible", action="store_true")
+
     browser_click = browser_subparsers.add_parser("click")
     browser_click.add_argument("target")
     browser_click.add_argument("selector")
@@ -164,6 +204,12 @@ def build_parser() -> argparse.ArgumentParser:
     browser_send.add_argument("--params")
     browser_send.add_argument("--endpoint")
     browser_send.add_argument("--port", type=int)
+
+    browser_batch = browser_subparsers.add_parser("batch")
+    browser_batch.add_argument("target")
+    browser_batch.add_argument("operations_json")
+    browser_batch.add_argument("--endpoint")
+    browser_batch.add_argument("--port", type=int)
 
     libreoffice_parser = subparsers.add_parser("libreoffice")
     libreoffice_subparsers = libreoffice_parser.add_subparsers(dest="libreoffice_command", required=True)
@@ -425,10 +471,18 @@ def dispatch(args: argparse.Namespace, manager: DesktopManager) -> Any:
             return browser_cdp.start_browser(app=args.app, executable=args.exec, port=args.port, url=args.url, headless=args.headless)
         if subcommand == "stop":
             return browser_cdp.stop_browser(args.pid, args.user_data_dir)
+        if subcommand == "discover":
+            return browser_cdp.discover(endpoint=args.endpoint, port=args.port)
+        if subcommand == "attach":
+            return browser_cdp.attach(endpoint=args.endpoint, port=args.port)
         if subcommand == "version":
             return browser_cdp.browser_version(endpoint=args.endpoint, port=args.port)
         if subcommand == "targets":
             return browser_cdp.list_targets(endpoint=args.endpoint, port=args.port)
+        if subcommand == "tabs":
+            return browser_cdp.tabs(endpoint=args.endpoint, port=args.port, include_non_pages=args.include_non_pages)
+        if subcommand == "active-tab":
+            return browser_cdp.active_tab(endpoint=args.endpoint, port=args.port)
         if subcommand == "open":
             return browser_cdp.open_target(args.url, endpoint=args.endpoint, port=args.port)
         if subcommand == "activate":
@@ -458,6 +512,27 @@ def dispatch(args: argparse.Namespace, manager: DesktopManager) -> Any:
             return browser_cdp.text(args.target, endpoint=args.endpoint, port=args.port, selector=args.selector)
         if subcommand == "selection":
             return browser_cdp.selection(args.target, endpoint=args.endpoint, port=args.port)
+        if subcommand == "snapshot":
+            return browser_cdp.snapshot(args.target, endpoint=args.endpoint, port=args.port, text_limit=args.text_limit)
+        if subcommand == "wait-url":
+            return browser_cdp.wait_url(
+                args.target,
+                args.needle,
+                endpoint=args.endpoint,
+                port=args.port,
+                timeout=args.timeout,
+                interval_ms=args.interval,
+            )
+        if subcommand == "wait-selector":
+            return browser_cdp.wait_selector(
+                args.target,
+                args.selector,
+                endpoint=args.endpoint,
+                port=args.port,
+                timeout=args.timeout,
+                interval_ms=args.interval,
+                visible=args.visible,
+            )
         if subcommand == "click":
             return browser_cdp.click(args.target, args.selector, endpoint=args.endpoint, port=args.port)
         if subcommand == "type":
@@ -473,6 +548,8 @@ def dispatch(args: argparse.Namespace, manager: DesktopManager) -> Any:
             return browser_cdp.press_key(args.target, args.combo, endpoint=args.endpoint, port=args.port)
         if subcommand == "send":
             return browser_cdp.send_command(args.target, args.method, args.params, endpoint=args.endpoint, port=args.port)
+        if subcommand == "batch":
+            return browser_cdp.batch(args.target, args.operations_json, endpoint=args.endpoint, port=args.port)
         raise DctlError("UNKNOWN", f"Unsupported browser command '{subcommand}'.")
     if command == "libreoffice":
         subcommand = args.libreoffice_command
