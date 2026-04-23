@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dctl"
+version = "0.1.0"
+description = "Headless desktop control CLI for LLM agents"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+  { name = "zemul" }
+]
+dependencies = [
+  "websockets>=12",
+  "python-docx>=1.1.0",
+  "openpyxl>=3.1.0",
+]
+
+[project.optional-dependencies]
+macos = [
+  "pyobjc-framework-ApplicationServices; platform_system == 'Darwin'",
+  "pyobjc-framework-Quartz; platform_system == 'Darwin'",
+  "pyobjc-framework-Cocoa; platform_system == 'Darwin'",
+]
+
+[project.scripts]
+dctl = "dctl.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["dctl*"]
