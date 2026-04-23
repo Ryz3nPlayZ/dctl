@@ -1241,14 +1241,27 @@ def type_text(
     if selector:
         expression = f"""
 (() => {{
-  const node = document.querySelector({json.dumps(selector)});
+  let node = document.querySelector({json.dumps(selector)});
   if (!node) return false;
+  const ariaLabel = node.getAttribute && node.getAttribute('aria-label');
+  if (node.tagName === 'TEXTAREA' && ariaLabel) {{
+    const preferred = document.querySelector(
+      `[aria-label="${{ariaLabel.replace(/"/g, '&quot;')}}"][contenteditable="true"]`
+    );
+    if (preferred) node = preferred;
+  }}
   node.focus();
   if ({json.dumps(clear)}) {{
     if ('value' in node) {{
       node.value = '';
+      if (typeof node.dispatchEvent === 'function') {{
+        node.dispatchEvent(new InputEvent('input', {{ bubbles: true, inputType: 'deleteContentBackward', data: null }}));
+      }}
     }} else if (node.isContentEditable) {{
-      node.textContent = '';
+      node.innerHTML = '';
+      if (typeof node.dispatchEvent === 'function') {{
+        node.dispatchEvent(new InputEvent('input', {{ bubbles: true, inputType: 'deleteContentBackward', data: null }}));
+      }}
     }}
   }}
   return true;
@@ -1264,8 +1277,17 @@ def type_text(
 (() => {
   const node = document.activeElement;
   if (!node) return false;
-  if ('value' in node) node.value = '';
-  else if (node.isContentEditable) node.textContent = '';
+  if ('value' in node) {
+    node.value = '';
+    if (typeof node.dispatchEvent === 'function') {
+      node.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward', data: null }));
+    }
+  } else if (node.isContentEditable) {
+    node.innerHTML = '';
+    if (typeof node.dispatchEvent === 'function') {
+      node.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward', data: null }));
+    }
+  }
   return true;
 })()
 """.strip(),
