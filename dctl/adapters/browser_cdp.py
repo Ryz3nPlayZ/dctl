@@ -1204,6 +1204,11 @@ def press_key(
     base, target = _prepare_page_target(target_selector, endpoint, port, session_name=session_name)
     _send_command(target, "Page.bringToFront")
     spec = parse_key_combo(combo)
+    commands: list[str] = []
+    if spec.key == "Enter" and spec.modifiers == 0:
+        commands = ["insertParagraphSeparator"]
+    elif spec.key == "Enter" and spec.modifiers & 8:
+        commands = ["insertLineBreak"]
     key_down = {
         "type": "keyDown",
         "modifiers": spec.modifiers,
@@ -1212,6 +1217,8 @@ def press_key(
         "windowsVirtualKeyCode": spec.key_code,
         "nativeVirtualKeyCode": spec.key_code,
     }
+    if commands:
+        key_down["commands"] = commands
     if spec.text:
         key_down["text"] = spec.text
         key_down["unmodifiedText"] = spec.text

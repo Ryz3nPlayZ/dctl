@@ -35,6 +35,26 @@ class BrowserAdapterTests(unittest.TestCase):
         self.assertEqual(spec.code, "Enter")
         self.assertEqual(spec.key_code, 13)
 
+    def test_enter_key_uses_paragraph_separator_command(self) -> None:
+        from dctl.adapters import browser_cdp as module
+
+        calls: list[tuple[str, dict[str, object] | None]] = []
+
+        def fake_send(target: dict[str, object], method: str, params: dict[str, object] | None = None):
+            calls.append((method, params))
+            if method == "Page.bringToFront":
+                return {}
+            return {}
+
+        with patch("dctl.adapters.browser_cdp._prepare_page_target", return_value=("http://127.0.0.1:9333", {"type": "page"})), patch(
+            "dctl.adapters.browser_cdp._send_command", side_effect=fake_send
+        ):
+            module.press_key("active", "enter")
+
+        self.assertEqual(calls[0][0], "Page.bringToFront")
+        self.assertEqual(calls[1][0], "Input.dispatchKeyEvent")
+        self.assertEqual(calls[1][1]["commands"], ["insertParagraphSeparator"])
+
     def test_parse_debug_port_from_cmdline(self) -> None:
         self.assertEqual(_parse_debug_port("/usr/bin/google-chrome\0--remote-debugging-port=9333\0"), 9333)
         self.assertIsNone(_parse_debug_port("/usr/bin/google-chrome\0--profile-directory=Default\0"))
