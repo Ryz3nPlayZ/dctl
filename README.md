@@ -2,202 +2,100 @@
 
 `dctl` is a headless desktop control CLI for LLM agents.
 
-It is designed for non-interactive tool use:
+It gives an agent a structured, non-interactive control plane for the desktop:
 
 - JSON-first output
 - deterministic commands
-- semantic accessibility access when available
-- raw Linux fallbacks for windowing, input, launch, and capture
-- app-specific semantic adapters for browsers, LibreOffice, DOCX, and XLSX
+- semantic UI access when available
+- raw fallbacks when needed
+- browser, office, DOCX, and XLSX adapters for precise work
 
-## Status
+Start here:
 
-Current repository state:
+- [Getting Started](docs/GETTING-STARTED.md)
+- [Command Reference](docs/COMMANDS.md)
+- [Browser Guide](docs/BROWSER.md)
+- [Office Guide](docs/OFFICE.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Configuration](docs/CONFIGURATION.md)
+- [Development](docs/DEVELOPMENT.md)
+- [zWork Integration](docs/ZWORK-INTEGRATION.md)
+
+## What It Is For
+
+`dctl` is meant for agents that need to:
+
+- launch and inspect desktop apps
+- click, type, scroll, and focus deterministically
+- read UI state from accessibility trees when available
+- control browser tabs and browser-hosted apps without a terminal session
+- edit Word and Excel files with structure-aware commands
+- mix shell, file, browser, and office workflows in one run
+
+## Current State
+
+Implemented and working in this repo:
 
 - Linux-first implementation
 - unified CLI contract intended to carry over to macOS
 - AT-SPI semantic backend on Linux
-- `xdotool` window/input fallback on Linux when usable
+- `xdotool` fallback for window/input control on Linux when usable
 - `ydotool` support for text and key fallback when configured
 - app launch and `.desktop` enumeration
 - screenshot capture through Linux helper backends
-- native macOS backend wired behind the same CLI contract using AX, Quartz, `open`, and `screencapture`
+- native macOS backend behind the same CLI contract using AX, Quartz, `open`, and `screencapture`
+- managed browser sessions with persistent profiles
+- browser attachment to debug-enabled existing sessions
+- direct DOCX and XLSX editing
+- worksheet-oriented DOCX/XLSX helpers for question sheets and table filling
 
-macOS support is implemented in code but was not live-tested in this Linux session.
+macOS support is implemented in code, but this repo has only been exercised live on Linux in this session.
 
-## Implemented Commands
+## Quick Start
 
-```text
-dctl capabilities
-dctl doctor
-
-dctl list-apps
-dctl list-windows
-dctl list-launchable
-dctl launch <TARGET>
-dctl open <PATH_OR_URL>
-
-dctl tree [--app APP] [--depth N]
-dctl element <SELECTOR>
-dctl read <SELECTOR>
-dctl describe <X> <Y>
-dctl wait <SELECTOR> [--timeout SECONDS] [--interval MS]
-
-dctl focus <SELECTOR>
-dctl click <SELECTOR>
-dctl type <TEXT> [--into SELECTOR]
-dctl key <COMBO>
-dctl scroll <DIRECTION> [--amount N]
-
-dctl screenshot [--window WINDOW_OR_SELECTOR] [--region X,Y,W,H] [--output PATH] [--base64]
-
-dctl browser start [--session NAME] [--app brave|chrome|chromium] [--port PORT] [--url URL]
-dctl browser stop [--session NAME | --pid PID]
-dctl browser sessions
-dctl browser session-info <NAME>
-dctl browser discover [--port PORT]
-dctl browser attach [--session NAME | --endpoint URL | --port PORT]
-dctl browser tabs [--session NAME | --endpoint URL] [--include-non-pages]
-dctl browser active-tab [--session NAME | --endpoint URL]
-dctl browser targets [--session NAME | --endpoint URL]
-dctl browser snapshot <TARGET> [--session NAME | --endpoint URL]
-dctl browser wait-url <TARGET> <NEEDLE> [--session NAME | --endpoint URL]
-dctl browser wait-selector <TARGET> <CSS_SELECTOR> [--session NAME | --endpoint URL] [--visible]
-dctl browser dom <TARGET> [--session NAME | --endpoint URL] [--selector CSS]
-dctl browser ax <TARGET> [--session NAME | --endpoint URL] [--selector CSS]
-dctl browser text <TARGET> [--session NAME | --endpoint URL] [--selector CSS]
-dctl browser selection <TARGET> [--session NAME | --endpoint URL]
-dctl browser caret <TARGET> [--session NAME | --endpoint URL] [--selector CSS] [--start N] [--end N]
-dctl browser click <TARGET> <CSS_SELECTOR> [--session NAME | --endpoint URL]
-dctl browser type <TARGET> <TEXT> [--session NAME | --endpoint URL] [--selector CSS] [--clear]
-dctl browser press <TARGET> <COMBO> [--session NAME | --endpoint URL]
-dctl browser eval <TARGET> <JAVASCRIPT> [--session NAME | --endpoint URL]
-dctl browser send <TARGET> <CDP_METHOD> [--session NAME | --endpoint URL] [--params JSON]
-dctl browser batch <TARGET> <OPERATIONS_JSON> [--session NAME | --endpoint URL]
-
-dctl libreoffice start [--port PORT] [--headless]
-dctl libreoffice docs [--port PORT]
-dctl libreoffice open <PATH> [--port PORT]
-dctl libreoffice info <DOCUMENT>
-dctl libreoffice writer-text <DOCUMENT>
-dctl libreoffice writer-paragraphs <DOCUMENT>
-dctl libreoffice writer-append <DOCUMENT> <TEXT>
-dctl libreoffice writer-set-paragraph <DOCUMENT> <INDEX> <TEXT>
-dctl libreoffice calc-sheets <DOCUMENT>
-dctl libreoffice calc-read <DOCUMENT> <SHEET> <RANGE>
-dctl libreoffice calc-write-cell <DOCUMENT> <SHEET> <CELL> <VALUE> [--json]
-dctl libreoffice calc-write-range <DOCUMENT> <SHEET> <RANGE> <ROWS_JSON>
-
-dctl docx inspect <PATH>
-dctl docx read <PATH>
-dctl docx paragraphs <PATH>
-dctl docx append <PATH> <TEXT>
-dctl docx insert-before <PATH> <INDEX> <TEXT>
-dctl docx set-paragraph <PATH> <INDEX> <TEXT>
-dctl docx replace <PATH> <FIND> <REPLACE>
-dctl docx backup <PATH>
-dctl docx diff <PATH> --against OTHER.docx
-dctl docx worksheet-map <PATH>
-dctl docx answer-question <PATH> --question TEXT --answer TEXT [--exact]
-dctl docx answer-all <PATH> ANSWERS.json [--exact]
-dctl docx fill-table <PATH> --table TITLE_OR_INDEX ENTRIES.json
-
-dctl xlsx inspect <PATH>
-dctl xlsx sheets <PATH>
-dctl xlsx read <PATH> <SHEET> <RANGE>
-dctl xlsx write-cell <PATH> <SHEET> <CELL> <VALUE> [--json]
-dctl xlsx write-range <PATH> <SHEET> <RANGE> <ROWS_JSON>
-dctl xlsx backup <PATH>
-dctl xlsx diff <PATH> --against OTHER.xlsx
-dctl xlsx worksheet-map <PATH> [--sheet SHEET]
-dctl xlsx locate-cell <PATH> <SHEET> --row-label TEXT --column-label TEXT [--table NAME]
-dctl xlsx fill-cell <PATH> <SHEET> --row-label TEXT --column-label TEXT --value VALUE [--table NAME] [--json]
-dctl xlsx fill-table <PATH> <SHEET> ENTRIES.json [--table NAME]
+```bash
+python3 -m dctl doctor
+python3 -m dctl capabilities
+python3 -m dctl list-apps
+python3 -m dctl list-launchable
 ```
 
-## Linux Runtime Expectations
+Browser session example:
 
-Best experience:
+```bash
+python3 -m dctl browser start --session work --app chrome --url https://mail.google.com
+python3 -m dctl browser sessions
+python3 -m dctl browser tabs --session work
+```
+
+Document example:
+
+```bash
+python3 -m dctl docx worksheet-map paper.docx
+python3 -m dctl docx answer-question paper.docx --question "What is photosynthesis?" --answer "Plants convert light energy into chemical energy."
+python3 -m dctl xlsx fill-cell sheet.xlsx Sheet1 --row-label "Oxygen" --column-label "Atomic Number" --value 8
+```
+
+## Runtime Expectations
+
+Best Linux experience:
 
 - AT-SPI accessibility bus available
 - `xdg-open` installed
-- `grim` or `scrot` installed
+- `grim`, `spectacle`, or `scrot` installed
 - `xdotool` available for X11 or XWayland fallback
 
 Wayland note:
 
-- semantic AT-SPI access is still the preferred path
+- semantic AT-SPI access is the preferred path
 - `ydotool` may work for input fallback, but it requires a running `ydotoold` and usable socket access
 - `xdotool` is only useful where X11/XWayland access is actually available
 
-## Precision Surfaces
+## Why This Matters for zWork
 
-For detailed app work, `dctl` now exposes text-native control surfaces instead of relying on screenshots:
+zWork is strongest when it can stay text-native. `dctl` is the desktop layer that lets zWork:
 
-- `dctl browser ...`: Chrome DevTools Protocol for DOM, accessibility tree, JS evaluation, click, text input, and raw CDP commands
-- `dctl libreoffice ...`: UNO-based Writer/Calc document access and mutation
-- `dctl docx ...`: direct Word `.docx` file inspection and editing through `python-docx`
-- `dctl xlsx ...`: direct Excel `.xlsx` inspection and editing through `openpyxl`
-
-This is the intended path for precise work in browser-hosted editors, LibreOffice, and Office file formats.
-
-The browser adapter supports both attachable existing debug-enabled browsers and persistent dctl-managed agent browser sessions:
-
-- `dctl browser discover` scans for attachable local Chrome/Brave CDP endpoints
-- `dctl browser attach` binds to an existing endpoint instead of launching a disposable browser
-- `dctl browser tabs`, `active-tab`, `snapshot`, `wait-url`, `wait-selector`, and `batch` reduce round trips for agent workflows
-- `dctl browser start --session work` creates a persistent profile under `.dctl/browser/profiles/work`
-- managed sessions keep browser login state, cookies, and profile data across restarts
-- managed sessions can be targeted by name with `--session` instead of raw ports
-- `dctl browser caret` places the cursor or selection inside inputs, textareas, and contenteditable regions when the page exposes them directly
-
-## Worksheet Editing
-
-The `docx` and `xlsx` adapters now include a worksheet-oriented layer:
-
-- `dctl docx worksheet-map` identifies likely question paragraphs and table structures
-- `dctl docx answer-question` inserts or replaces an answer directly below a matched question
-- `dctl docx answer-all` applies a batch of question/answer edits from JSON
-- `dctl docx fill-table` fills table cells by row label and column label
-- `dctl xlsx worksheet-map` emits inferred table structure for sheets without formal Excel tables
-- `dctl xlsx locate-cell` resolves a semantic row/column label pair to an exact cell
-- `dctl xlsx fill-cell` and `dctl xlsx fill-table` write by semantic labels instead of raw coordinates
-- both adapters create automatic backups before mutating files
-
-## Development
-
-Run tests:
-
-```bash
-PYTHONPATH=/home/zemul/Programming/dctl python3 -m unittest discover -s tests -v
-```
-
-Run the CLI directly from source:
-
-```bash
-PYTHONPATH=/home/zemul/Programming/dctl python3 -m dctl capabilities
-```
-
-## macOS Notes
-
-The macOS backend expects PyObjC bindings for:
-
-- `pyobjc-framework-ApplicationServices`
-- `pyobjc-framework-Quartz`
-- `pyobjc-framework-Cocoa`
-
-Install them with the `macos` extra or directly with `pip`.
-
-You will also need:
-
-- Accessibility permission for semantic UI control and input events
-- Screen Recording permission for screenshots in many environments
-
-## Sources
-
-- Chrome DevTools Protocol: https://chromedevtools.github.io/devtools-protocol/
-- Chrome DevTools Protocol Accessibility domain: https://chromedevtools.github.io/devtools-protocol/tot/Accessibility/
-- LibreOffice SDK / UNO API: https://api.libreoffice.org/
-- LibreOffice TextDocument service: https://api.libreoffice.org/docs/idl/ref/servicecom_1_1sun_1_1star_1_1text_1_1TextDocument.html
-- `python-docx` API docs: https://python-docx.readthedocs.io/en/latest/
-- `openpyxl` docs: https://openpyxl.readthedocs.io/en/stable/
+- avoid brittle screenshot-only control
+- use the browser as a controlled text surface
+- edit files directly when the format is known
+- fall back to GUI control only when necessary
