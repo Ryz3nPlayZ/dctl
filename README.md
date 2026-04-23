@@ -83,12 +83,24 @@ dctl docx append <PATH> <TEXT>
 dctl docx insert-before <PATH> <INDEX> <TEXT>
 dctl docx set-paragraph <PATH> <INDEX> <TEXT>
 dctl docx replace <PATH> <FIND> <REPLACE>
+dctl docx backup <PATH>
+dctl docx diff <PATH> --against OTHER.docx
+dctl docx worksheet-map <PATH>
+dctl docx answer-question <PATH> --question TEXT --answer TEXT [--exact]
+dctl docx answer-all <PATH> ANSWERS.json [--exact]
+dctl docx fill-table <PATH> --table TITLE_OR_INDEX ENTRIES.json
 
 dctl xlsx inspect <PATH>
 dctl xlsx sheets <PATH>
 dctl xlsx read <PATH> <SHEET> <RANGE>
 dctl xlsx write-cell <PATH> <SHEET> <CELL> <VALUE> [--json]
 dctl xlsx write-range <PATH> <SHEET> <RANGE> <ROWS_JSON>
+dctl xlsx backup <PATH>
+dctl xlsx diff <PATH> --against OTHER.xlsx
+dctl xlsx worksheet-map <PATH> [--sheet SHEET]
+dctl xlsx locate-cell <PATH> <SHEET> --row-label TEXT --column-label TEXT [--table NAME]
+dctl xlsx fill-cell <PATH> <SHEET> --row-label TEXT --column-label TEXT --value VALUE [--table NAME] [--json]
+dctl xlsx fill-table <PATH> <SHEET> ENTRIES.json [--table NAME]
 ```
 
 ## Linux Runtime Expectations
@@ -116,6 +128,19 @@ For detailed app work, `dctl` now exposes text-native control surfaces instead o
 - `dctl xlsx ...`: direct Excel `.xlsx` inspection and editing through `openpyxl`
 
 This is the intended path for precise work in browser-hosted editors, LibreOffice, and Office file formats.
+
+## Worksheet Editing
+
+The `docx` and `xlsx` adapters now include a worksheet-oriented layer:
+
+- `dctl docx worksheet-map` identifies likely question paragraphs and table structures
+- `dctl docx answer-question` inserts or replaces an answer directly below a matched question
+- `dctl docx answer-all` applies a batch of question/answer edits from JSON
+- `dctl docx fill-table` fills table cells by row label and column label
+- `dctl xlsx worksheet-map` emits inferred table structure for sheets without formal Excel tables
+- `dctl xlsx locate-cell` resolves a semantic row/column label pair to an exact cell
+- `dctl xlsx fill-cell` and `dctl xlsx fill-table` write by semantic labels instead of raw coordinates
+- both adapters create automatic backups before mutating files
 
 ## Development
 

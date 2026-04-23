@@ -275,6 +275,32 @@ def build_parser() -> argparse.ArgumentParser:
     docx_replace.add_argument("find")
     docx_replace.add_argument("replace")
 
+    docx_backup = docx_subparsers.add_parser("backup")
+    docx_backup.add_argument("path")
+
+    docx_diff = docx_subparsers.add_parser("diff")
+    docx_diff.add_argument("path")
+    docx_diff.add_argument("--against", required=True)
+
+    docx_map = docx_subparsers.add_parser("worksheet-map")
+    docx_map.add_argument("path")
+
+    docx_answer = docx_subparsers.add_parser("answer-question")
+    docx_answer.add_argument("path")
+    docx_answer.add_argument("--question", required=True)
+    docx_answer.add_argument("--answer", required=True)
+    docx_answer.add_argument("--exact", action="store_true")
+
+    docx_answer_all = docx_subparsers.add_parser("answer-all")
+    docx_answer_all.add_argument("path")
+    docx_answer_all.add_argument("answers_json")
+    docx_answer_all.add_argument("--exact", action="store_true")
+
+    docx_fill_table = docx_subparsers.add_parser("fill-table")
+    docx_fill_table.add_argument("path")
+    docx_fill_table.add_argument("--table", required=True)
+    docx_fill_table.add_argument("entries_json")
+
     xlsx_parser = subparsers.add_parser("xlsx", aliases=["excel"])
     xlsx_subparsers = xlsx_parser.add_subparsers(dest="xlsx_command", required=True)
 
@@ -301,6 +327,39 @@ def build_parser() -> argparse.ArgumentParser:
     xlsx_write_range.add_argument("sheet")
     xlsx_write_range.add_argument("range")
     xlsx_write_range.add_argument("rows_json")
+
+    xlsx_backup = xlsx_subparsers.add_parser("backup")
+    xlsx_backup.add_argument("path")
+
+    xlsx_diff = xlsx_subparsers.add_parser("diff")
+    xlsx_diff.add_argument("path")
+    xlsx_diff.add_argument("--against", required=True)
+
+    xlsx_map = xlsx_subparsers.add_parser("worksheet-map")
+    xlsx_map.add_argument("path")
+    xlsx_map.add_argument("--sheet")
+
+    xlsx_locate = xlsx_subparsers.add_parser("locate-cell")
+    xlsx_locate.add_argument("path")
+    xlsx_locate.add_argument("sheet")
+    xlsx_locate.add_argument("--row-label", required=True)
+    xlsx_locate.add_argument("--column-label", required=True)
+    xlsx_locate.add_argument("--table")
+
+    xlsx_fill_cell = xlsx_subparsers.add_parser("fill-cell")
+    xlsx_fill_cell.add_argument("path")
+    xlsx_fill_cell.add_argument("sheet")
+    xlsx_fill_cell.add_argument("--row-label", required=True)
+    xlsx_fill_cell.add_argument("--column-label", required=True)
+    xlsx_fill_cell.add_argument("--value", required=True)
+    xlsx_fill_cell.add_argument("--table")
+    xlsx_fill_cell.add_argument("--json", action="store_true")
+
+    xlsx_fill_table = xlsx_subparsers.add_parser("fill-table")
+    xlsx_fill_table.add_argument("path")
+    xlsx_fill_table.add_argument("sheet")
+    xlsx_fill_table.add_argument("entries_json")
+    xlsx_fill_table.add_argument("--table")
 
     return parser
 
@@ -471,6 +530,18 @@ def dispatch(args: argparse.Namespace, manager: DesktopManager) -> Any:
             return docx_files.set_paragraph(args.path, args.index, args.text)
         if subcommand == "replace":
             return docx_files.replace(args.path, args.find, args.replace)
+        if subcommand == "backup":
+            return docx_files.backup(args.path)
+        if subcommand == "diff":
+            return docx_files.diff(args.path, args.against)
+        if subcommand == "worksheet-map":
+            return docx_files.worksheet_map(args.path)
+        if subcommand == "answer-question":
+            return docx_files.answer_question(args.path, args.question, args.answer, exact=args.exact)
+        if subcommand == "answer-all":
+            return docx_files.answer_all(args.path, args.answers_json, exact=args.exact)
+        if subcommand == "fill-table":
+            return docx_files.fill_table(args.path, args.table, args.entries_json)
         raise DctlError("UNKNOWN", f"Unsupported DOCX command '{subcommand}'.")
     if command in {"xlsx", "excel"}:
         subcommand = args.xlsx_command
@@ -484,6 +555,32 @@ def dispatch(args: argparse.Namespace, manager: DesktopManager) -> Any:
             return xlsx_files.write_cell(args.path, args.sheet, args.cell, args.value, json_value=args.json)
         if subcommand == "write-range":
             return xlsx_files.write_range(args.path, args.sheet, args.range, args.rows_json)
+        if subcommand == "backup":
+            return xlsx_files.backup(args.path)
+        if subcommand == "diff":
+            return xlsx_files.diff(args.path, args.against)
+        if subcommand == "worksheet-map":
+            return xlsx_files.worksheet_map(args.path, sheet_name=args.sheet)
+        if subcommand == "locate-cell":
+            return xlsx_files.locate_cell(
+                args.path,
+                args.sheet,
+                args.row_label,
+                args.column_label,
+                table_name=args.table,
+            )
+        if subcommand == "fill-cell":
+            return xlsx_files.fill_cell(
+                args.path,
+                args.sheet,
+                args.row_label,
+                args.column_label,
+                args.value,
+                table_name=args.table,
+                json_value=args.json,
+            )
+        if subcommand == "fill-table":
+            return xlsx_files.fill_table(args.path, args.sheet, args.entries_json, table_name=args.table)
         raise DctlError("UNKNOWN", f"Unsupported XLSX command '{subcommand}'.")
     raise DctlError("UNKNOWN", f"Unsupported command '{command}'.")
 
