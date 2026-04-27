@@ -41,6 +41,7 @@ class DesktopManager(DesktopBackend):
         self._atspi: LinuxAtspiProvider | None = None
         self._windowing: XdotoolWindowProvider | None = None
         self._macos: MacOSBackend | None = None
+        self._windows: Any | None = None
 
     def capabilities(self) -> dict[str, Any]:
         return self._capabilities
@@ -51,6 +52,8 @@ class DesktopManager(DesktopBackend):
     def list_apps(self) -> list[dict[str, Any]]:
         if self.env.platform == "darwin":
             return self._macos_backend().list_apps()
+        if self.env.platform == "windows":
+            return self._windows_backend().list_apps()
         if self._has_accessibility():
             return [app.to_dict() for app in self._accessibility_provider().list_apps()]
         if self._has_windowing():
@@ -60,6 +63,8 @@ class DesktopManager(DesktopBackend):
     def list_windows(self) -> list[dict[str, Any]]:
         if self.env.platform == "darwin":
             return self._macos_backend().list_windows()
+        if self.env.platform == "windows":
+            return self._windows_backend().list_windows()
         if self._has_windowing():
             return [window.to_dict() for window in self._window_provider().list_windows()]
         if self._has_accessibility():
@@ -69,24 +74,32 @@ class DesktopManager(DesktopBackend):
     def list_launchable(self) -> list[dict[str, Any]]:
         if self.env.platform == "darwin":
             return self._macos_backend().list_launchable()
+        if self.env.platform == "windows":
+            return self._windows_backend().list_launchable()
         self._require_linux()
         return list_launchable()
 
     def launch(self, target: str) -> dict[str, Any]:
         if self.env.platform == "darwin":
             return self._macos_backend().launch(target)
+        if self.env.platform == "windows":
+            return self._windows_backend().launch(target)
         self._require_linux()
         return launch_target(target, self.env.helpers.get("xdg-open"), self.env.helpers.get("gtk-launch"))
 
     def open_target(self, target: str) -> dict[str, Any]:
         if self.env.platform == "darwin":
             return self._macos_backend().open_target(target)
+        if self.env.platform == "windows":
+            return self._windows_backend().open_target(target)
         self._require_linux()
         return open_target(target, self.env.helpers.get("xdg-open"))
 
     def tree(self, app_name: str | None = None, depth: int = 5) -> dict[str, Any]:
         if self.env.platform == "darwin":
             return self._macos_backend().tree(app_name=app_name, depth=depth)
+        if self.env.platform == "windows":
+            return self._windows_backend().tree(app_name=app_name, depth=depth)
         if not self._has_accessibility():
             raise DctlError(
                 "CAPABILITY_UNAVAILABLE",
@@ -98,6 +111,8 @@ class DesktopManager(DesktopBackend):
     def element(self, selector_text: str) -> dict[str, Any]:
         if self.env.platform == "darwin":
             return self._macos_backend().element(selector_text)
+        if self.env.platform == "windows":
+            return self._windows_backend().element(selector_text)
         matches = [match.serialized for match in self._search_targets(selector_text)]
         if not matches:
             raise DctlError(
@@ -110,6 +125,8 @@ class DesktopManager(DesktopBackend):
     def read(self, selector_text: str) -> dict[str, Any]:
         if self.env.platform == "darwin":
             return self._macos_backend().read(selector_text)
+        if self.env.platform == "windows":
+            return self._windows_backend().read(selector_text)
         match = self._resolve_single(selector_text)
         if match.kind == "accessible":
             return self._accessibility_provider().read_element(match.raw)
@@ -118,6 +135,8 @@ class DesktopManager(DesktopBackend):
     def focus(self, selector_text: str) -> dict[str, Any]:
         if self.env.platform == "darwin":
             return self._macos_backend().focus(selector_text)
+        if self.env.platform == "windows":
+            return self._windows_backend().focus(selector_text)
         if self._is_coordinate_selector(selector_text):
             return self._pointer_click(selector_text, focus_only=True)
         match = self._resolve_single(selector_text)
@@ -131,6 +150,8 @@ class DesktopManager(DesktopBackend):
     def click(self, selector_text: str) -> dict[str, Any]:
         if self.env.platform == "darwin":
             return self._macos_backend().click(selector_text)
+        if self.env.platform == "windows":
+            return self._windows_backend().click(selector_text)
         if self._is_coordinate_selector(selector_text):
             return self._pointer_click(selector_text)
         match = self._resolve_single(selector_text)
@@ -145,6 +166,8 @@ class DesktopManager(DesktopBackend):
     def type_text(self, text: str, selector_text: str | None = None) -> dict[str, Any]:
         if self.env.platform == "darwin":
             return self._macos_backend().type_text(text, selector_text)
+        if self.env.platform == "windows":
+            return self._windows_backend().type_text(text, selector_text)
         if selector_text:
             if self._is_coordinate_selector(selector_text):
                 self._pointer_click(selector_text, focus_only=True)
@@ -162,6 +185,8 @@ class DesktopManager(DesktopBackend):
     def press_key(self, combo: str) -> dict[str, Any]:
         if self.env.platform == "darwin":
             return self._macos_backend().press_key(combo)
+        if self.env.platform == "windows":
+            return self._windows_backend().press_key(combo)
         helper = self._input_helper()
         if helper == "xdotool":
             self._run_helper([self.env.helpers["xdotool"], "key", combo])
@@ -179,6 +204,8 @@ class DesktopManager(DesktopBackend):
     def scroll(self, direction: str, amount: int = 1) -> dict[str, Any]:
         if self.env.platform == "darwin":
             return self._macos_backend().scroll(direction, amount)
+        if self.env.platform == "windows":
+            return self._windows_backend().scroll(direction, amount)
         helper = self._input_helper()
         normalized = direction.strip().lower()
         if helper != "xdotool":
@@ -205,6 +232,14 @@ class DesktopManager(DesktopBackend):
     ) -> dict[str, Any]:
         if self.env.platform == "darwin":
             return self._macos_backend().screenshot(
+                screen=screen,
+                window=window,
+                region=region,
+                output_path=output_path,
+                as_base64=as_base64,
+            )
+        if self.env.platform == "windows":
+            return self._windows_backend().screenshot(
                 screen=screen,
                 window=window,
                 region=region,
@@ -260,6 +295,8 @@ class DesktopManager(DesktopBackend):
     def describe(self, x: int, y: int) -> dict[str, Any]:
         if self.env.platform == "darwin":
             return self._macos_backend().describe(x, y)
+        if self.env.platform == "windows":
+            return self._windows_backend().describe(x, y)
         if self._has_accessibility():
             try:
                 return self._accessibility_provider().element_at(x, y)
@@ -272,6 +309,8 @@ class DesktopManager(DesktopBackend):
     def wait(self, selector_text: str, timeout: float, interval_ms: int = 250) -> dict[str, Any]:
         if self.env.platform == "darwin":
             return self._macos_backend().wait(selector_text, timeout, interval_ms)
+        if self.env.platform == "windows":
+            return self._windows_backend().wait(selector_text, timeout, interval_ms)
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             matches = self._search_targets(selector_text)
@@ -524,10 +563,10 @@ class DesktopManager(DesktopBackend):
         return self._windowing
 
     def _require_linux(self) -> None:
-        if self.env.platform != "linux":
+        if self.env.platform not in ("linux",):
             raise DctlError(
                 "PLATFORM_NOT_SUPPORTED",
-                f"Current implementation is Linux-first. Active platform is {self.env.platform}.",
+                f"This code path is Linux-only. Active platform: {self.env.platform}.",
             )
 
     def _macos_backend(self) -> MacOSBackend:
@@ -539,6 +578,17 @@ class DesktopManager(DesktopBackend):
         if self._macos is None:
             self._macos = MacOSBackend(self.env)
         return self._macos
+
+    def _windows_backend(self) -> Any:
+        if self.env.platform != "windows":
+            raise DctlError(
+                "PLATFORM_NOT_SUPPORTED",
+                f"Current platform is {self.env.platform}, not Windows.",
+            )
+        if self._windows is None:
+            from dctl.platform.windows.backend import WindowsBackend
+            self._windows = WindowsBackend(self.env)
+        return self._windows
 
     def _run_helper(self, args: list[str]) -> None:
         try:

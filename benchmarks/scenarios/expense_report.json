@@ -1,0 +1,14 @@
+{
+  "id": "expense_report",
+  "name": "Accountant: Expense Reconciliation",
+  "description": "Scrape invoice data from a browser and update a master Excel spreadsheet.",
+  "objective": "Update 'expenses.xlsx' with the latest 'Acme Corp' total from the web portal.",
+  "success_criteria": [
+    {
+      "type": "xlsx_content",
+      "path": "expenses.xlsx",
+      "sheet": "2024",
+      "cell_match": { "label_row": "Acme Corp", "label_col": "Amount", "value_type": "number" }
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "scenario": "agent_web_search_eval",
+  "start_time": 1777249953.037534,
+  "steps": [
+    {
+      "index": 0,
+      "command": "browser start",
+      "duration_ms": 2034,
+      "response_size_kb": 0.76,
+      "status": "ok",
+      "timestamp": 1777249955.0726347
+    },
+    {
+      "index": 1,
+      "command": "browser open",
+      "duration_ms": 1274,
+      "response_size_kb": 0.99,
+      "status": "ok",
+      "timestamp": 1777249956.3473837
+    },
+    {
+      "index": 2,
+      "command": "tree --role entry",
+      "duration_ms": 1263,
+      "response_size_kb": 0.0,
+      "status": "error",
+      "timestamp": 1777249959.6135027
+    },
+    {
+      "index": 3,
+      "command": "type",
+      "duration_ms": 1309,
+      "response_size_kb": 0.0,
+      "status": "error",
+      "timestamp": 1777249960.9231617
+    },
+    {
+      "index": 4,
+      "command": "key Enter",
+      "duration_ms": 1841,
+      "response_size_kb": 0.0,
+      "status": "error",
+      "timestamp": 1777249962.7648957
+    },
+    {
+      "index": 5,
+      "command": "browser active-tab",
+      "duration_ms": 2397,
+      "response_size_kb": 1.11,
+      "status": "ok",
+      "timestamp": 1777249967.1649454
+    }
+  ],
+  "total_bytes_received": 2919,
+  "errors": 3,
+  "end_time": 1777249968.6539195,
+  "total_duration_sec": 15.62,
+  "success": false,
+  "failure_reason": "",
+  "metrics": {
+    "avg_latency_ms": 1686,
+    "total_data_mb": 0.0,
+    "step_count": 6,
+    "compute_waste_score": 0.5
+  }
+}

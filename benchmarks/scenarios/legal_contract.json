@@ -1,0 +1,26 @@
+{
+  "id": "legal_contract",
+  "name": "Legal Assistant: Service Agreement",
+  "description": "Create a formatted Word document from scratch with specific sections and tables.",
+  "objective": "Produce 'service_agreement_final.docx' with professional formatting.",
+  "steps": [
+    { "id": "launch", "description": "Launch the word processor" },
+    { "id": "title", "description": "Add a centered bold title" },
+    { "id": "parties", "description": "Add the 'Parties' section" },
+    { "id": "table", "description": "Add and fill the rates table" },
+    { "id": "save", "description": "Save the file" }
+  ],
+  "success_criteria": [
+    {
+      "type": "file_exists",
+      "path": "service_agreement_final.docx"
+    },
+    {
+      "type": "docx_content",
+      "path": "service_agreement_final.docx",
+      "min_paragraphs": 4,
+      "contains": ["SERVICE AGREEMENT", "Acme Corp"],
+      "paragraph_style_match": { "0": "centered", "0_bold": true }
+    }
+  ]
+}

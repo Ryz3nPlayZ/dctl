@@ -23,6 +23,14 @@ macos = [
   "pyobjc-framework-Quartz; platform_system == 'Darwin'",
   "pyobjc-framework-Cocoa; platform_system == 'Darwin'",
 ]
+windows = [
+  "comtypes>=1.4; platform_system == 'Windows'",
+  "Pillow>=10; platform_system == 'Windows'",
+]
+dev = [
+  "pytest>=8",
+  "pytest-cov",
+]
 
 [project.scripts]
 dctl = "dctl.cli:main"

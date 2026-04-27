@@ -223,13 +223,77 @@ def build_doctor_report(capabilities: dict[str, Any]) -> dict[str, Any]:
                     "suggestion": "Install `openpyxl` to enable XLSX commands.",
                 }
             )
+    elif platform == "windows":
+        if not checks.get("comtypes_importable"):
+            issues.append(
+                {
+                    "severity": "error",
+                    "area": "accessibility",
+                    "message": "The `comtypes` module is not importable; UIAutomation will be unavailable.",
+                    "suggestion": "Install comtypes: `pip install comtypes`.",
+                }
+            )
+        if not checks.get("winreg_importable"):
+            issues.append(
+                {
+                    "severity": "warning",
+                    "area": "launch",
+                    "message": "The `winreg` module is not importable; app discovery via the registry will fail.",
+                    "suggestion": "Ensure Python is running on a standard Windows interpreter.",
+                }
+            )
+        if not checks.get("gdi_available"):
+            issues.append(
+                {
+                    "severity": "warning",
+                    "area": "capture",
+                    "message": "Win32 GDI capture APIs appear unavailable.",
+                    "suggestion": "Ensure ctypes.windll is accessible (standard on CPython/Windows).",
+                }
+            )
+        if not checks.get("websockets_importable"):
+            issues.append(
+                {
+                    "severity": "warning",
+                    "area": "browser",
+                    "message": "The `websockets` module is not importable.",
+                    "suggestion": "Install the Python `websockets` package to enable browser CDP commands.",
+                }
+            )
+        if not checks.get("uno_importable"):
+            issues.append(
+                {
+                    "severity": "info",
+                    "area": "office",
+                    "message": "The `uno` module is not importable.",
+                    "suggestion": "Install LibreOffice's Python UNO bindings if you want semantic office control.",
+                }
+            )
+        if not checks.get("docx_importable"):
+            issues.append(
+                {
+                    "severity": "warning",
+                    "area": "docx",
+                    "message": "The `python-docx` module is not importable.",
+                    "suggestion": "Install `python-docx` to enable DOCX commands.",
+                }
+            )
+        if not checks.get("openpyxl_importable"):
+            issues.append(
+                {
+                    "severity": "warning",
+                    "area": "xlsx",
+                    "message": "The `openpyxl` module is not importable.",
+                    "suggestion": "Install `openpyxl` to enable XLSX commands.",
+                }
+            )
     else:
         issues.append(
             {
                 "severity": "error",
                 "area": "platform",
                 "message": f"Unsupported platform: {platform}",
-                "suggestion": "Use Linux or macOS.",
+                "suggestion": "Use Linux, macOS, or Windows.",
             }
         )
 

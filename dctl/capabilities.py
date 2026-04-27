@@ -272,6 +272,97 @@ def collect_capabilities(env: EnvironmentInfo) -> dict[str, Any]:
         commands["word"] = providers["docx"] is not None
         commands["xlsx"] = providers["xlsx"] is not None
         commands["excel"] = providers["xlsx"] is not None
+    elif env.platform == "windows":
+        comtypes_importable = _module_importable("comtypes")
+        winreg_importable = _module_importable("winreg")
+        websockets_importable = _module_importable("websockets")
+        docx_importable = _module_importable("docx")
+        openpyxl_importable = _module_importable("openpyxl")
+        uno_importable = _module_importable("uno")
+
+        # GDI is available iff ctypes.windll exists (standard CPython on Windows)
+        gdi_available = False
+        try:
+            import ctypes
+            _ = ctypes.windll.gdi32
+            gdi_available = True
+        except Exception:
+            pass
+
+        diagnostics["checks"]["comtypes_importable"] = comtypes_importable
+        diagnostics["checks"]["winreg_importable"] = winreg_importable
+        diagnostics["checks"]["gdi_available"] = gdi_available
+        diagnostics["checks"]["websockets_importable"] = websockets_importable
+        diagnostics["checks"]["docx_importable"] = docx_importable
+        diagnostics["checks"]["openpyxl_importable"] = openpyxl_importable
+        diagnostics["checks"]["uno_importable"] = uno_importable
+
+        if comtypes_importable:
+            providers["accessibility"] = "uia"
+            providers["input"] = "sendinput"
+            providers["windowing"] = "win32"
+        else:
+            warnings.append("comtypes is not installed; UIAutomation semantic commands will fail.")
+            # Win32 windowing still works without comtypes
+            providers["windowing"] = "win32"
+            providers["input"] = "sendinput"
+
+        if gdi_available:
+            providers["capture"] = "gdi"
+        else:
+            warnings.append("Win32 GDI capture is unavailable.")
+
+        # Launch via ShellExecuteW is always available on Windows
+        providers["launch"] = "shell"
+
+        if websockets_importable:
+            providers["browser"] = "cdp"
+        else:
+            warnings.append("The `websockets` module is missing; browser CDP commands will fail.")
+
+        if uno_importable and (env.helpers.get("soffice") or env.helpers.get("libreoffice")):
+            providers["office"] = "uno"
+        elif uno_importable:
+            warnings.append("The `uno` module is available but LibreOffice is not on PATH.")
+        else:
+            warnings.append("The `uno` module is missing; LibreOffice semantic commands will fail.")
+
+        if docx_importable:
+            providers["docx"] = "python-docx"
+        else:
+            warnings.append("The `python-docx` module is missing; DOCX commands will fail.")
+
+        if openpyxl_importable:
+            providers["xlsx"] = "openpyxl"
+        else:
+            warnings.append("The `openpyxl` module is missing; XLSX commands will fail.")
+
+        commands = {
+            "capabilities": True,
+            "doctor": True,
+            "list-apps": providers["windowing"] is not None or providers["accessibility"] is not None,
+            "list-windows": providers["windowing"] is not None,
+            "list-launchable": providers["launch"] is not None,
+            "launch": providers["launch"] is not None,
+            "open": providers["launch"] is not None,
+            "tree": providers["accessibility"] is not None,
+            "element": providers["accessibility"] is not None or providers["windowing"] is not None,
+            "read": providers["accessibility"] is not None or providers["windowing"] is not None,
+            "describe": providers["accessibility"] is not None or providers["windowing"] is not None,
+            "wait": providers["accessibility"] is not None or providers["windowing"] is not None,
+            "focus": providers["input"] is not None or providers["windowing"] is not None,
+            "click": providers["input"] is not None or providers["accessibility"] is not None,
+            "type": providers["input"] is not None,
+            "key": providers["input"] is not None,
+            "scroll": providers["input"] is not None,
+            "screenshot": providers["capture"] is not None,
+            "browser": providers["browser"] is not None,
+            "libreoffice": providers["office"] is not None,
+            "docx": providers["docx"] is not None,
+            "word": providers["docx"] is not None,
+            "xlsx": providers["xlsx"] is not None,
+            "excel": providers["xlsx"] is not None,
+        }
     else:
         warnings.append(f"Unsupported platform: {env.platform}")
         commands = {"capabilities": True, "doctor": True}
@@ -284,3 +375,4 @@ def collect_capabilities(env: EnvironmentInfo) -> dict[str, Any]:
         "warnings": warnings,
         "diagnostics": diagnostics,
     }
+

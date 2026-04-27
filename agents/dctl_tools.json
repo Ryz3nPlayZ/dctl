@@ -1,0 +1,147 @@
+{
+  "tools": [
+    {
+      "name": "dctl_system",
+      "description": "General system control and discovery. Use this to list open windows, find launchable apps, or start new processes. Returns JSON describing windows, apps, or execution status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["capabilities", "doctor", "list-apps", "list-windows", "list-launchable", "launch", "open"],
+            "description": "The system action to perform. 'launch' starts an app by name; 'open' opens a URL or file path; 'list-windows' shows all visible window titles and IDs."
+          },
+          "target": {
+            "type": "string",
+            "description": "The target app name (for launch) or URL/file path (for open). Optional for other actions."
+          }
+        },
+        "required": ["action"]
+      }
+    },
+    {
+      "name": "dctl_ui",
+      "description": "Native UI automation via the OS Accessibility Tree. Use this to inspect UI elements, click buttons, type into fields, or read text on the desktop. Locates elements using a boolean selector string (e.g. 'app:\"Code\" AND role:button').",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["tree", "element", "read", "click", "type", "key", "focus", "scroll", "wait", "describe", "screenshot"],
+            "description": "The UI interaction to perform. 'tree' dumps the accessibility hierarchy; 'click' triggers a button; 'type' inserts text; 'describe' identifies what is at coordinates."
+          },
+          "selector": {
+            "type": "string",
+            "description": "The dctl selector query to find the element (e.g., 'app:\"Chrome\" AND name:\"Search\"'). Required for click, type, focus, read, wait, element."
+          },
+          "text": {
+            "type": "string",
+            "description": "The text to type into the element (used with action='type')."
+          },
+          "combo": {
+            "type": "string",
+            "description": "The key combination to press (e.g., 'ctrl+c', 'win+r'). Used with action='key'."
+          },
+          "direction": {
+            "type": "string",
+            "enum": ["up", "down", "left", "right"],
+            "description": "Scroll direction (used with action='scroll')."
+          },
+          "amount": {
+            "type": "integer",
+            "default": 1,
+            "description": "Number of scroll increments."
+          },
+          "x": { "type": "integer", "description": "X coordinate for 'describe'." },
+          "y": { "type": "integer", "description": "Y coordinate for 'describe'." }
+        },
+        "required": ["action"]
+      }
+    },
+    {
+      "name": "dctl_browser",
+      "description": "Deep browser automation via CDP (Chrome DevTools Protocol). Use this for complex web tasks like automating Google Docs, switching tabs, or reading the DOM. This bypasses OS accessibility and interacts directly with the browser engine.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["start", "tabs", "open", "activate", "ax", "dom", "click", "type", "press", "eval", "wait-url", "wait-selector", "snapshot"],
+            "description": "Browser action. 'ax' returns the browser's internal accessibility tree; 'dom' returns raw HTML/DOM structure; 'snapshot' returns a high-level summary of the page text."
+          },
+          "target": {
+            "type": "string",
+            "description": "The target tab/page ID or index. Required for most actions except 'start' and 'tabs'."
+          },
+          "selector": {
+            "type": "string",
+            "description": "CSS selector for DOM actions or AX selector."
+          },
+          "url": {
+            "type": "string",
+            "description": "URL to navigate to."
+          },
+          "text": {
+            "type": "string",
+            "description": "Text to type into the browser element."
+          },
+          "expression": {
+            "type": "string",
+            "description": "JavaScript expression to evaluate in the page context."
+          },
+          "session": {
+            "type": "string",
+            "description": "Optional session name for persistent browser state."
+          }
+        },
+        "required": ["action"]
+      }
+    },
+    {
+      "name": "dctl_office",
+      "description": "Semantic document and spreadsheet editing (Word/Excel/LibreOffice). Use this to read paragraphs, edit cells, append text, or replace content in documents without a GUI. Supports .docx and .xlsx files.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["word", "excel", "libreoffice"],
+            "description": "The type of document or editor backend."
+          },
+          "action": {
+            "type": "string",
+            "enum": ["inspect", "read", "paragraphs", "append", "set-paragraph", "replace", "sheets", "write-cell", "write-range", "fill-table"],
+            "description": "The editing action."
+          },
+          "path": {
+            "type": "string",
+            "description": "Path to the .docx or .xlsx file."
+          },
+          "text": {
+            "type": "string",
+            "description": "Text content to insert or append."
+          },
+          "index": {
+            "type": "integer",
+            "description": "Paragraph or element index."
+          },
+          "sheet": {
+            "type": "string",
+            "description": "Sheet name for Excel/Calc."
+          },
+          "cell": {
+            "type": "string",
+            "description": "Cell reference (e.g., 'A1')."
+          },
+          "value": {
+            "type": "string",
+            "description": "Value to write to a cell."
+          },
+          "find": { "type": "string" },
+          "replace": { "type": "string" }
+        },
+        "required": ["type", "action", "path"]
+      }
+    }
+  ]
+}

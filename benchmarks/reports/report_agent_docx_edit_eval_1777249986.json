@@ -1,0 +1,42 @@
+{
+  "scenario": "agent_docx_edit_eval",
+  "start_time": 1777249982.8807752,
+  "steps": [
+    {
+      "index": 0,
+      "command": "docx append",
+      "duration_ms": 1123,
+      "response_size_kb": 0.65,
+      "status": "ok",
+      "timestamp": 1777249984.5697303
+    },
+    {
+      "index": 1,
+      "command": "docx append --style",
+      "duration_ms": 904,
+      "response_size_kb": 0.65,
+      "status": "ok",
+      "timestamp": 1777249985.4739184
+    },
+    {
+      "index": 2,
+      "command": "docx read",
+      "duration_ms": 1248,
+      "response_size_kb": 0.64,
+      "status": "ok",
+      "timestamp": 1777249986.7222748
+    }
+  ],
+  "total_bytes_received": 1978,
+  "errors": 0,
+  "end_time": 1777249986.722346,
+  "total_duration_sec": 3.84,
+  "success": true,
+  "failure_reason": "",
+  "metrics": {
+    "avg_latency_ms": 1091,
+    "total_data_mb": 0.0,
+    "step_count": 3,
+    "compute_waste_score": 0.0
+  }
+}
