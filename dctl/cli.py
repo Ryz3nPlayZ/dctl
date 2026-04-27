@@ -28,6 +28,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     tree_parser = subparsers.add_parser("tree")
     tree_parser.add_argument("--app")
+    tree_parser.add_argument("--window")
     tree_parser.add_argument("--depth", type=int, default=5)
 
     element_parser = subparsers.add_parser("element")
@@ -475,7 +476,7 @@ def dispatch(args: argparse.Namespace, manager: DesktopManager) -> Any:
     if command == "open":
         return manager.open_target(args.target)
     if command == "tree":
-        return manager.tree(app_name=args.app, depth=args.depth)
+        return manager.tree(app_name=args.app, window=args.window, depth=args.depth)
     if command == "element":
         return manager.element(args.selector)
     if command == "read":

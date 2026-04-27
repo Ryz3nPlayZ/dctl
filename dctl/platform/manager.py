@@ -95,18 +95,23 @@ class DesktopManager(DesktopBackend):
         self._require_linux()
         return open_target(target, self.env.helpers.get("xdg-open"))
 
-    def tree(self, app_name: str | None = None, depth: int = 5) -> dict[str, Any]:
+    def tree(self, app_name: str | None = None, window: str | None = None, depth: int = 5) -> dict[str, Any]:
         if self.env.platform == "darwin":
-            return self._macos_backend().tree(app_name=app_name, depth=depth)
-        if self.env.platform == "windows":
-            return self._windows_backend().tree(app_name=app_name, depth=depth)
-        if not self._has_accessibility():
-            raise DctlError(
-                "CAPABILITY_UNAVAILABLE",
-                "Accessibility tree dumping requires the AT-SPI backend.",
-                suggestion="Enable accessibility support and rerun `dctl doctor`.",
-            )
-        return {"items": self._accessibility_provider().get_tree(app_name=app_name, depth=depth)}
+            result = self._macos_backend().tree(app_name=app_name, depth=depth)
+        elif self.env.platform == "windows":
+            result = self._windows_backend().tree(app_name=app_name, depth=depth)
+        else:
+            if not self._has_accessibility():
+                raise DctlError(
+                    "CAPABILITY_UNAVAILABLE",
+                    "Accessibility tree dumping requires the AT-SPI backend.",
+                    suggestion="Enable accessibility support and rerun `dctl doctor`.",
+                )
+            result = {"items": self._accessibility_provider().get_tree(app_name=app_name, depth=depth)}
+
+        if window:
+            result["items"] = _filter_tree_items(result.get("items", []), window)
+        return result
 
     def element(self, selector_text: str) -> dict[str, Any]:
         if self.env.platform == "darwin":
@@ -607,3 +612,29 @@ class DesktopManager(DesktopBackend):
                 f"Helper command failed: {' '.join(shlex.quote(arg) for arg in args)}",
                 suggestion=stderr or "Inspect the helper tool configuration and permissions.",
             )
+
+
+def _filter_tree_items(items: list[dict[str, Any]], window: str) -> list[dict[str, Any]]:
+    filtered: list[dict[str, Any]] = []
+    for item in items:
+        children = item.get("children", []) or []
+        filtered_children = _filter_tree_items(children, window)
+        if _tree_item_matches_window(item, window) or filtered_children:
+            copied = dict(item)
+            copied["children"] = filtered_children if filtered_children else list(children)
+            filtered.append(copied)
+    return filtered
+
+
+def _tree_item_matches_window(item: dict[str, Any], window: str) -> bool:
+    needle = window.strip().lower()
+    if not needle:
+        return False
+
+    window_info = item.get("window") or {}
+    candidates = [
+        str(item.get("name") or ""),
+        str(window_info.get("title") or ""),
+        str(window_info.get("id") or ""),
+    ]
+    return any(needle in candidate.lower() for candidate in candidates if candidate)

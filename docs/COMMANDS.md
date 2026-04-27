@@ -33,7 +33,7 @@ Use `launch` for apps and `open` for files or URLs.
 ### Accessibility and interaction
 
 ```bash
-python3 -m dctl tree [--app APP] [--depth N]
+python3 -m dctl tree [--app APP] [--window WINDOW] [--depth N]
 python3 -m dctl element <SELECTOR>
 python3 -m dctl read <SELECTOR>
 python3 -m dctl describe <X> <Y>
