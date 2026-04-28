@@ -1,116 +1,155 @@
 # Getting Started
 
-This guide gets you from zero to usable desktop control.
+## Prerequisites
 
-## 1. Install
+- Python 3.11+
+- Linux, macOS, or Windows
+
+## Install
 
 From the repository root:
 
 ```bash
-python3 -m pip install -e .
+pip install -e .
 ```
 
-On macOS, install the optional backend dependencies too:
+For macOS backends:
 
 ```bash
-python3 -m pip install -e '.[macos]'
+pip install -e '.[macos]'
 ```
 
-## 2. Check the environment
-
-Run the two baseline commands first:
+For Windows backends:
 
 ```bash
-python3 -m dctl doctor
-python3 -m dctl capabilities
+pip install -e '.[windows]'
 ```
 
-These tell you:
+For development (includes pytest):
 
-- what platform was detected
-- which backend is active
-- which helpers are available
-- what is missing
+```bash
+pip install -e '.[dev]'
+```
+
+After install, the `dctl` command is available on PATH. You can also run `python3 -m dctl`.
+
+## Verify the Installation
+
+Run diagnostics first:
+
+```bash
+dctl doctor
+dctl capabilities
+```
+
+These report:
+- which platform and session type was detected
+- which backend is active for each capability
+- which helper tools are available or missing
 - which commands are expected to work
+- permission and setup issues with remediation hints
 
-## 3. Start with simple desktop control
+## First Commands
 
-List apps and windows:
-
-```bash
-python3 -m dctl list-apps
-python3 -m dctl list-windows
-```
-
-Inspect the UI tree:
+### Desktop
 
 ```bash
-python3 -m dctl tree --depth 3
+# List running applications
+dctl list-apps
+
+# List open windows
+dctl list-windows
+
+# Dump the accessibility tree
+dctl tree --depth 3
+
+# Find a specific element
+dctl element 'app:"Firefox" AND role:text_field'
+
+# Read text from an element
+dctl read 'role:text_field AND name:"Address"'
+
+# Click a button
+dctl click 'role:button AND name:"Save"'
+
+# Type into a field
+dctl type "Hello" --into 'role:text_field AND name:"Search"'
 ```
 
-Find or read something:
+### Browser
+
+Start a managed browser session:
 
 ```bash
-python3 -m dctl element "browser"
-python3 -m dctl read "compose"
-python3 -m dctl describe 100 200
+dctl browser start --session work --app chrome --url https://example.com
+dctl browser tabs --session work
+dctl browser snapshot active --session work
 ```
 
-## 4. Try a browser session
-
-For agent workflows, use a managed browser session:
+Navigate and interact:
 
 ```bash
-python3 -m dctl browser start --session work --app chrome --url https://example.com
-python3 -m dctl browser sessions
-python3 -m dctl browser tabs --session work
-python3 -m dctl browser snapshot active --session work
+dctl browser open https://docs.google.com --session work
+dctl browser type active "Hello" --selector 'input[name="q"]' --clear --session work
+dctl browser press active enter --session work
 ```
 
-Useful browser actions:
+### Documents
+
+Read and edit DOCX files:
 
 ```bash
-python3 -m dctl browser open https://docs.google.com --session work
-python3 -m dctl browser activate active --session work
-python3 -m dctl browser eval active "location.href='https://mail.google.com'" --session work
+dctl docx read notes.docx
+dctl docx paragraphs notes.docx
+dctl docx worksheet-map notes.docx
+dctl docx answer-question notes.docx --question "Name:" --answer "Ada Lovelace"
 ```
 
-## 5. Try document workflows
-
-Direct DOCX edits:
+Read and edit XLSX files:
 
 ```bash
-python3 -m dctl docx read notes.docx
-python3 -m dctl docx paragraphs notes.docx
-python3 -m dctl docx worksheet-map notes.docx
+dctl xlsx sheets data.xlsx
+dctl xlsx read data.xlsx Sheet1 A1:D10
+dctl xlsx worksheet-map data.xlsx
+dctl xlsx fill-cell data.xlsx Sheet1 --row-label "Oxygen" --column-label "Atomic Number" --value 8
 ```
 
-Direct XLSX edits:
+## Choosing the Right Backend
 
-```bash
-python3 -m dctl xlsx sheets sheet.xlsx
-python3 -m dctl xlsx worksheet-map sheet.xlsx
-python3 -m dctl xlsx locate-cell sheet.xlsx Sheet1 --row-label "Oxygen" --column-label "Atomic Number"
-```
+| Task | Use |
+|---|---|
+| Web apps (Gmail, Google Docs, etc.) | `dctl browser` |
+| `.docx` files | `dctl docx` |
+| `.xlsx` files | `dctl xlsx` |
+| Live LibreOffice control on Linux | `dctl libreoffice` |
+| Desktop apps with no better path | Desktop commands (`click`, `type`, `key`) |
 
-## 6. Use the right backend
+The general rule: prefer the most structured path available. File-model editing beats browser control beats desktop input.
 
-Rule of thumb:
+## Runtime Dependencies
 
-- use `browser` for web apps and browser-hosted editors
-- use `docx` for `.docx` files
-- use `xlsx` for `.xlsx` files
-- use `libreoffice` when you want live office-app control on Linux
-- use desktop commands only when the app does not expose a better semantic surface
+### Linux
 
-## 7. Keep the browser session alive
+Best experience with:
+- AT-SPI accessibility bus available
+- `xdg-open` for file/URL launching
+- `xdotool` for X11/XWayland input fallback
+- `ydotool` + `ydotoold` for Wayland input fallback
+- `grim`, `spectacle`, or `scrot` for screenshots
+- `soffice` or `libreoffice` for LibreOffice commands
 
-If you want login persistence, use a named session and keep using the same name:
+### macOS
 
-```bash
-python3 -m dctl browser start --session work --app chrome
-python3 -m dctl browser stop --session work
-python3 -m dctl browser session-info work
-```
+- Accessibility permission (System Settings > Privacy & Security > Accessibility)
+- Screen Recording permission for screenshots
 
-The profile lives under `.dctl/browser/profiles/work` by default.
+### Windows
+
+- No special permissions beyond normal user access
+
+## Next Steps
+
+- [Command Reference](COMMANDS.md) — full CLI reference
+- [Browser Guide](BROWSER.md) — browser automation in depth
+- [Office Guide](OFFICE.md) — document editing in depth
+- [Architecture](ARCHITECTURE.md) — how dctl works internally

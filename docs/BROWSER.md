@@ -1,184 +1,164 @@
 # Browser Guide
 
-`dctl browser` is the browser control plane.
+`dctl browser` provides browser automation through Chrome DevTools Protocol (CDP). It is the right tool for web apps — Gmail, Google Docs, Google Sheets, CRMs, internal tools, and any browser-hosted workflow.
 
-Use it when the browser is the real application surface, especially for:
+## Session Modes
 
-- Gmail
-- Google Docs
-- Google Sheets
-- browser-based internal tools
-- web apps that need tab, DOM, and keyboard control
-
-## Two Browser Modes
-
-### 1. Managed sessions
-
-This is the default recommended path for agents.
+### Managed Sessions (Recommended)
 
 ```bash
-python3 -m dctl browser start --session work --app chrome --url https://mail.google.com
+dctl browser start --session work --app chrome --url https://mail.google.com
 ```
 
-Why this matters:
+Managed sessions give you:
+- persistent browser profiles under `.dctl/browser/profiles/<name>`
+- login state, cookies, and local profile data preserved across starts
+- reconnect by session name
+- session metadata in `.dctl/browser/sessions/<name>.json`
 
-- login state persists
-- cookies persist
-- browser profile data persists
-- the agent can reconnect by session name
+### Attaching to Existing Browsers
 
-Managed sessions live under:
-
-- `.dctl/browser/profiles/<session>`
-- `.dctl/browser/sessions/<session>.json`
-
-### 2. Debug-enabled existing browsers
-
-If a browser was started with a CDP endpoint, `dctl` can attach to it.
+If a browser is already running with remote debugging enabled:
 
 ```bash
-python3 -m dctl browser discover
-python3 -m dctl browser attach --port 9222
+dctl browser discover                  # Find debug-enabled browsers
+dctl browser attach --port 9222        # Attach to a specific endpoint
 ```
 
-This works only if the browser already exposes remote debugging.
+## Recommended Workflow
 
-## Recommended Browser Workflow
+1. Start or attach to a browser session
+2. Inspect current tab state (`tabs`, `active-tab`, `snapshot`)
+3. Navigate to the target (`open`)
+4. Wait for the target surface (`wait-selector`, `wait-url`)
+5. Read the current state (`snapshot`, `text`, `dom`)
+6. Perform the action (`type`, `click`, `press`, `eval`)
+7. Verify the result (`snapshot`, `text`, `dom`)
 
-1. Start or attach to a browser session.
-2. Inspect the current tab state.
-3. Navigate or open the target app.
-4. Verify the page state with `snapshot`, `text`, or `dom`.
-5. Type or press keys into the exact target.
-6. Verify after each meaningful action.
+Always verify after mutations. Do not assume a `type` succeeded without checking.
 
-## Tab and State Commands
+## Inspection Commands
 
-Use these first:
+### Snapshot
 
 ```bash
-python3 -m dctl browser tabs --session work
-python3 -m dctl browser active-tab --session work
-python3 -m dctl browser snapshot active --session work
+dctl browser snapshot active --session work
 ```
 
-Good agent behavior:
+Returns a high-level text representation of the page. Good for understanding what's visible and interactive. Use `--text-limit N` to cap output length (default 4000 chars).
 
-- identify the current tab before editing
-- use the tab ID or `active` target explicitly
-- re-snapshot after navigation or send actions
-
-## Editing Rules
-
-### Prefer precise selectors
-
-For simple web forms, use direct selectors.
-
-Examples:
+### DOM and Accessibility Tree
 
 ```bash
-python3 -m dctl browser type active "sent from dctl" --selector 'input[name="subjectbox"]' --clear --session work
-python3 -m dctl browser type active "this shit works" --selector 'div[aria-label="Message Body"][contenteditable="true"]' --clear --session work
+dctl browser dom active --selector '#main' --depth 3 --session work
+dctl browser ax active --selector '#main' --session work
+dctl browser text active --selector '#main' --session work
 ```
 
-### Prefer browser-native editing over raw clicks
+- `dom` returns raw HTML structure
+- `ax` returns the browser's accessibility tree
+- `text` returns extracted text content
 
-For browser-hosted apps, use:
-
-- `type`
-- `press`
-- `caret`
-- `selection`
-- `eval`
-
-Avoid relying on coordinates unless the app has no usable DOM or accessibility surface.
-
-### Use `press` for shortcuts
-
-Examples:
+### Selection and Caret
 
 ```bash
-python3 -m dctl browser press active ctrl+enter --session work
-python3 -m dctl browser press active shift+enter --session work
+dctl browser selection active --session work
+dctl browser caret active --selector 'textarea' --start 5 --end 5 --session work
 ```
 
-`Enter` is mapped to a paragraph separator in editable browser contexts so Google Docs and similar editors behave more like a human typing.
+`caret` sets the insertion point in an input or contenteditable element. Use it when you need to insert or replace text at a specific position.
 
-## Caret Control
+## Editing Commands
 
-Use `caret` when you need a precise insertion point inside an input or contenteditable region.
+### Type
 
 ```bash
-python3 -m dctl browser caret active --selector '#box' --start 3 --end 3 --session work
+dctl browser type active "Hello" --selector 'input[name="q"]' --clear --session work
 ```
 
-This is the right primitive for:
+`--clear` clears the existing content before typing. Always specify `--selector` to target the right element.
 
-- inserting text at a known position
-- replacing a selected span
-- working with a form field without retyping the whole value
+### Click
+
+```bash
+dctl browser click active 'button[aria-label="Send"]' --session work
+```
+
+### Press
+
+```bash
+dctl browser press active ctrl+enter --session work
+dctl browser press active shift+tab --session work
+```
+
+Key combos use `+` as separator. `Enter` is mapped to a paragraph separator in editable contexts for correct behavior in editors like Google Docs.
+
+### JavaScript Evaluation
+
+```bash
+dctl browser eval active "document.title" --session work
+dctl browser eval active "document.querySelector('input').value" --session work
+```
+
+Use `--no-await-promise` if the expression returns a promise you don't want to wait for.
 
 ## Batch Mode
 
-`browser batch` is the efficiency primitive.
-
-Use it when the agent would otherwise make several round trips in a row.
-
-Example:
+Chain multiple operations in a single round trip to reduce latency:
 
 ```bash
-python3 -m dctl browser batch active '[
+dctl browser batch active '[
   {"op":"snapshot"},
-  {"op":"wait-selector","selector":"input[name=subjectbox]","timeout":10},
-  {"op":"type","selector":"input[name=subjectbox]","clear":true,"text":"sent from dctl"},
-  {"op":"type","selector":"div[aria-label=\"Message Body\"][contenteditable=\"true\"]","clear":true,"text":"this shit works"},
+  {"op":"wait-selector","selector":"textarea","timeout":5},
+  {"op":"type","selector":"textarea","clear":true,"text":"Hello"},
   {"op":"press","combo":"ctrl+enter"}
-]'
+]' --session work
 ```
 
-## Gmail Guidance
+Supported operations: `activate`, `click`, `type`, `press`, `eval`, `wait-selector`, `wait-url`, `snapshot`, `text`, `selection`, `caret`.
 
-Gmail is a useful test surface because it is common and awkward.
+## Gmail Workflow
 
-Use this pattern:
+Gmail has pitfalls that trip up generic automation. Follow this pattern:
 
-1. open compose
-2. verify the compose fields exist
-3. set recipient
-4. set subject
-5. set body
-6. verify the DOM values
-7. send
-8. verify the sent state
+1. Open compose
+2. Wait for `input[aria-label="To recipients"]`
+3. Wait for `input[name="subjectbox"]`
+4. Wait for the body editor `div[aria-label="Message Body"][contenteditable="true"]`
+5. Type into each field with `--clear`
+6. Verify the DOM values after typing
+7. Send with `ctrl+enter`
+8. Verify sent state
 
-Important:
+Gmail renders inbox previews where subject and body text appear adjacent in the conversation list. That preview is not the compose form. Always target the actual compose DOM elements.
 
-- Gmail often renders previews where the subject and first body line appear adjacent in the conversation list
-- that preview is not the same thing as the actual subject field
-- always inspect the compose DOM or the message detail view if you care about exact header values
+## Google Docs Workflow
 
-## Google Docs Guidance
+1. Focus the correct tab
+2. Inspect with `snapshot` to find the insertion point
+3. Place the caret with `click` or `caret`
+4. Use `press` for formatting shortcuts (ctrl+b, ctrl+i, etc.)
+5. Use `type` for content
+6. Verify after each paragraph or formatting block
 
-For Docs, the best path is:
+For detailed document structure inspection, use `dom` or `ax` before editing.
 
-- use the managed browser session
-- keep the document open in a known tab
-- inspect with `snapshot`
-- place the caret with click or `caret`
-- use `press` for formatting shortcuts
-- use `type` for the actual content
+## Wait Primitives
 
-If the agent needs to make detailed edits, it should verify the document state after every paragraph or formatting block.
+```bash
+dctl browser wait-url active "docs.google.com" --timeout 10 --session work
+dctl browser wait-selector active 'textarea' --timeout 5 --session work
+```
 
-## When Browser Control Is Not Enough
+Use these after navigation or clicks that trigger page transitions. They poll until the condition is met or the timeout expires.
 
-If a browser app hides meaningful structure behind canvas-only rendering or custom widgets, `dctl` should not guess.
+## Fallback Hierarchy
 
-Fallbacks:
+When browser control isn't enough:
 
-- try `eval`
-- try `dom`
-- try `ax`
-- try `caret`
-- then use keyboard flow
-- then fall back to desktop control
+1. Try `eval` for JavaScript-level access
+2. Try `dom` for raw HTML structure
+3. Try `ax` for the accessibility tree
+4. Try `caret` for precise positioning
+5. Try keyboard flow with `press`
+6. Fall back to desktop commands (`dctl click`, `dctl type`, `dctl key`)

@@ -1,12 +1,15 @@
-# dctl Agent Integration
+# Agent Integration
 
-This directory contains the necessary artifacts to integrate `dctl` into an LLM Agent (e.g., Claude, GPT-4o).
+This directory contains artifacts for integrating `dctl` into LLM agent loops.
 
 ## Files
-- `dctl_tools.json`: The raw tool definitions in JSON Schema format. These can be mapped to OpenAI's `tools` or Anthropic's `tools` format.
-- `system_prompt_addon.md`: The instructions that should be appended to the agent's system prompt to explain how to use `dctl` (especially the selector syntax).
 
-## Example Python Integration (Anthropic)
+| File | Description |
+|---|---|
+| `dctl_tools.json` | Tool definitions in JSON Schema format. Maps to OpenAI and Anthropic tool-use formats. |
+| `system_prompt_addon.md` | System prompt instructions explaining the selector syntax and workflow patterns. |
+
+## Quick Integration (Anthropic Python SDK)
 
 ```python
 import json
@@ -14,33 +17,63 @@ from anthropic import Anthropic
 
 client = Anthropic()
 
-# Load tools from JSON
 with open("agents/dctl_tools.json") as f:
     dctl_tools = json.load(f)["tools"]
 
-# Load prompt addon
 with open("agents/system_prompt_addon.md") as f:
     dctl_instructions = f.read()
 
 system_prompt = f"You are a desktop automation agent. {dctl_instructions}"
 
-# Start agent loop
 response = client.messages.create(
-    model="claude-3-5-sonnet-20240620",
+    model="claude-sonnet-4-20250514",
     max_tokens=1024,
     system=system_prompt,
     tools=dctl_tools,
-    messages=[{"role": "user", "content": "Open Word and type 'Hello World'"}]
+    messages=[{"role": "user", "content": "Open the browser and search for 'dctl desktop control'"}],
+)
+```
+
+## Quick Integration (OpenAI Python SDK)
+
+```python
+import json
+from openai import OpenAI
+
+client = OpenAI()
+
+with open("agents/dctl_tools.json") as f:
+    dctl_tools = json.load(f)["tools"]
+
+with open("agents/system_prompt_addon.md") as f:
+    dctl_instructions = f.read()
+
+response = client.chat.completions.create(
+    model="gpt-4o",
+    messages=[
+        {"role": "system", "content": f"You are a desktop automation agent. {dctl_instructions}"},
+        {"role": "user", "content": "Open the browser and search for 'dctl desktop control'"},
+    ],
+    tools=dctl_tools,
 )
 ```
 
 ## Tool Mapping
-The `dctl_*` tools in the JSON schema map directly to `dctl` CLI commands. When the agent calls a tool, your backend should execute the corresponding CLI command:
 
-| Tool | CLI Command Template |
+Each `dctl_*` tool maps to a CLI command. Your backend should execute the corresponding command when the agent calls a tool:
+
+| Agent Tool | CLI Command |
 |---|---|
 | `dctl_system(action='list-windows')` | `dctl list-windows` |
 | `dctl_ui(action='click', selector='...')` | `dctl click "..."` |
 | `dctl_browser(action='open', url='...')` | `dctl browser open "..."` |
 | `dctl_office(type='word', action='append', path='...', text='...')` | `dctl docx append "..." "..."` |
-```
+
+## Integration Patterns
+
+See [ZWORK-INTEGRATION.md](../docs/ZWORK-INTEGRATION.md) for:
+- Backend selection rules
+- Recommended agent loop
+- Gmail and Google Docs workflows
+- Safety rules for agents
+- Fallback hierarchy

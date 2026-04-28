@@ -1,6 +1,6 @@
 # Configuration
 
-`dctl` is mostly convention-over-configuration, but there are still a few important knobs.
+`dctl` is convention-over-configuration. Most behavior is controlled through command flags rather than config files.
 
 ## Environment Variables
 
@@ -8,84 +8,75 @@
 
 Overrides the browser session home directory.
 
-Default:
-
-```text
-<project-root>/.dctl/browser
-```
-
-Used for:
-
-- managed browser profiles
-- browser session metadata
+Default: `<project-root>/.dctl/browser`
 
 Directory layout:
 
-```text
+```
 .dctl/browser/
   profiles/
-    work/
+    work/            # Browser profile data (cookies, login state)
   sessions/
-    work.json
+    work.json        # Session metadata
 ```
 
-## Browser Session Behavior
+## Browser Sessions
 
-Managed browser sessions use:
+Managed browser sessions use these Chromium flags:
 
-- `--remote-debugging-port=<PORT>`
-- `--user-data-dir=<PROFILE_DIR>`
-- `--restore-last-session` when a named session is used
+- `--remote-debugging-port=<PORT>` — CDP endpoint
+- `--user-data-dir=<PROFILE_DIR>` — persistent profile
+- `--restore-last-session` — restore tabs from previous run
 
-That means the browser keeps:
-
-- cookies
-- logins
+This gives managed sessions:
+- cookie and login persistence
 - local profile state
-- persisted tabs and session data where the browser supports it
+- tab restoration across restarts
+- stable session names for reconnect
 
 ## Dependency Discovery
 
-`dctl capabilities` and `dctl doctor` inspect helpers on PATH and importable Python modules.
+`dctl capabilities` and `dctl doctor` detect available helpers at runtime by checking PATH and importable Python modules.
 
-Useful Linux helpers:
+### Linux Helpers
 
-- `gdbus`
-- `xdg-open`
-- `xdotool`
-- `ydotool`
-- `grim`
-- `spectacle`
-- `scrot`
-- `soffice` or `libreoffice`
+| Tool | Purpose |
+|---|---|
+| `xdg-open` | File and URL launching |
+| `xdotool` | X11 window management and input |
+| `ydotool` | Wayland input (requires `ydotoold`) |
+| `grim` | Wayland screenshots |
+| `spectacle` | KDE screenshots |
+| `scrot` | X11 screenshots |
+| `soffice` / `libreoffice` | LibreOffice UNO bridge |
 
-Useful macOS helpers:
+### macOS Helpers
 
-- `open`
-- `screencapture`
+| Tool | Purpose |
+|---|---|
+| `open` | File and URL launching |
+| `screencapture` | Screenshots |
+
+### Windows
+
+No external helpers required — all backends use native APIs via ctypes and comtypes.
 
 ## Permissions
 
 ### Linux
 
-For best semantic coverage, the accessibility bus must be reachable from the session.
-
-For `ydotool`, the current user may need access to the uinput event path or a running helper service.
+- AT-SPI accessibility bus must be reachable from the session
+- `ydotool` requires access to the uinput event path or a running `ydotoold`
 
 ### macOS
 
-You will usually need:
+- **Accessibility** permission required for semantic UI control and input events
+- **Screen Recording** permission required for screenshots
 
-- Accessibility permission for semantic UI control and input events
-- Screen Recording permission for many screenshot cases
+### Windows
 
-## No Central Config File Yet
+- No special permissions beyond normal user access
 
-`dctl` currently uses:
+## No Config File
 
-- command arguments
-- environment variables
-- local browser session files
-
-There is not a single canonical config file yet.
-
+`dctl` currently uses command arguments, environment variables, and local browser session files. There is no central configuration file.

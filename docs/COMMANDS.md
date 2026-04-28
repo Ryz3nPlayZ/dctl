@@ -1,204 +1,224 @@
 # Command Reference
 
-This is the practical command map for `dctl`.
+All commands return JSON. Use `dctl` directly after install, or `python3 -m dctl` from source.
 
-## Top-Level Commands
-
-### Diagnostics
+## Diagnostics
 
 ```bash
-python3 -m dctl capabilities
-python3 -m dctl doctor
+dctl capabilities       # Machine-readable backend/capability matrix
+dctl doctor             # Diagnostic report with issues and remediation hints
 ```
 
-Use these first when something does not work.
+Run these first when something doesn't work.
 
-### Desktop inventory
+## Desktop
+
+### Inventory
 
 ```bash
-python3 -m dctl list-apps
-python3 -m dctl list-windows
-python3 -m dctl list-launchable
+dctl list-apps           # List running applications
+dctl list-windows        # List open windows
+dctl list-launchable     # List launchable apps (.desktop entries, bundles, etc.)
 ```
 
 ### Launch
 
 ```bash
-python3 -m dctl launch <TARGET>
-python3 -m dctl open <PATH_OR_URL>
+dctl launch <TARGET>     # Launch app by name, desktop entry, or path
+dctl open <PATH_OR_URL>  # Open file or URL in default handler
 ```
 
-Use `launch` for apps and `open` for files or URLs.
-
-### Accessibility and interaction
+### Accessibility Tree
 
 ```bash
-python3 -m dctl tree [--app APP] [--window WINDOW] [--depth N]
-python3 -m dctl element <SELECTOR>
-python3 -m dctl read <SELECTOR>
-python3 -m dctl describe <X> <Y>
-python3 -m dctl wait <SELECTOR> [--timeout SECONDS] [--interval MS]
-python3 -m dctl focus <SELECTOR>
-python3 -m dctl click <SELECTOR>
-python3 -m dctl type <TEXT> [--into SELECTOR]
-python3 -m dctl key <COMBO>
-python3 -m dctl scroll <DIRECTION> [--amount N]
-python3 -m dctl screenshot [--window WINDOW_OR_SELECTOR] [--region X,Y,W,H] [--output PATH] [--base64]
+dctl tree [--app APP] [--window WINDOW] [--depth N]
 ```
 
-## Browser Commands
+Dumps the accessibility tree as JSON. Default depth is 5.
 
-### Session management
+### Element Lookup
 
 ```bash
-python3 -m dctl browser start --session work --app chrome --url https://mail.google.com
-python3 -m dctl browser stop --session work
-python3 -m dctl browser sessions
-python3 -m dctl browser session-info work
-python3 -m dctl browser discover
-python3 -m dctl browser attach --session work
+dctl element <SELECTOR>  # Find elements matching selector
+dctl read <SELECTOR>     # Read text/value/label from matched element
+dctl describe <X> <Y>    # Return semantic info at screen coordinates
 ```
 
-Use:
-
-- `start` to create a persistent agent-owned browser
-- `discover` to find debug-enabled browsers already running
-- `attach` to bind to a running debug endpoint
-- `sessions` and `session-info` to inspect managed sessions
-
-### Page and tab control
+### Actions
 
 ```bash
-python3 -m dctl browser tabs --session work
-python3 -m dctl browser active-tab --session work
-python3 -m dctl browser targets --session work
-python3 -m dctl browser open https://docs.google.com --session work
-python3 -m dctl browser activate <TARGET> --session work
-python3 -m dctl browser close <TARGET> --session work
+dctl focus <SELECTOR>                     # Focus an element
+dctl click <SELECTOR>                     # Click an element
+dctl type <TEXT> [--into SELECTOR]        # Type text (optionally into a target)
+dctl key <COMBO>                          # Press a key combo (e.g. ctrl+s, alt+F4)
+dctl scroll <DIRECTION> [--amount N]     # Scroll up/down/left/right
+```
+
+### Wait
+
+```bash
+dctl wait <SELECTOR> [--timeout SECONDS] [--interval MS]
+```
+
+Poll until the selector matches. Default timeout 10s, interval 250ms.
+
+### Screenshot
+
+```bash
+dctl screenshot [--window WINDOW] [--region X,Y,W,H] [--output PATH] [--base64]
+```
+
+## Browser
+
+### Session Management
+
+```bash
+dctl browser start [--session NAME] [--app chrome|chromium|edge] [--url URL] [--headless]
+dctl browser stop [--session NAME] [--pid PID]
+dctl browser sessions
+dctl browser session-info <SESSION>
+dctl browser discover [--port PORT] [--endpoint URL]
+dctl browser attach [--session NAME] [--port PORT] [--endpoint URL]
+```
+
+- `start` creates a persistent agent-owned browser with a named profile
+- `discover` finds debug-enabled browsers already running
+- `attach` binds to a running debug endpoint
+- Sessions persist cookies, login state, and profile data under `.dctl/browser/`
+
+### Tab Control
+
+```bash
+dctl browser tabs [--session NAME] [--include-non-pages]
+dctl browser active-tab [--session NAME]
+dctl browser targets [--session NAME]
+dctl browser open <URL> [--session NAME]
+dctl browser activate <TARGET> [--session NAME]
+dctl browser close <TARGET> [--session NAME]
 ```
 
 ### Inspection
 
 ```bash
-python3 -m dctl browser snapshot active --session work
-python3 -m dctl browser wait-url active "docs.google.com" --session work
-python3 -m dctl browser wait-selector active "input[name=subjectbox]" --session work
-python3 -m dctl browser dom active --selector '#main'
-python3 -m dctl browser ax active --selector '#main'
-python3 -m dctl browser text active --selector '#main'
-python3 -m dctl browser selection active --session work
-python3 -m dctl browser caret active --selector 'input[name=subjectbox]' --start 0 --end 0 --session work
+dctl browser snapshot <TARGET> [--session NAME] [--text-limit N]
+dctl browser text <TARGET> [--selector CSS] [--session NAME]
+dctl browser dom <TARGET> [--selector CSS] [--depth N] [--session NAME]
+dctl browser ax <TARGET> [--selector CSS] [--session NAME]
+dctl browser selection <TARGET> [--session NAME]
+dctl browser caret <TARGET> [--selector CSS] [--start N] [--end N] [--session NAME]
+dctl browser wait-url <TARGET> <NEEDLE> [--timeout N] [--session NAME]
+dctl browser wait-selector <TARGET> <CSS> [--timeout N] [--session NAME]
 ```
 
-### Editing and control
+`snapshot` returns a high-level text representation of the page — good for understanding page state. `dom` and `ax` provide deeper structural access.
+
+### Editing
 
 ```bash
-python3 -m dctl browser click active 'button[aria-label="Send"]' --session work
-python3 -m dctl browser type active "Hello" --selector 'textarea[aria-label="Message Body"]' --session work
-python3 -m dctl browser press active ctrl+enter --session work
-python3 -m dctl browser eval active "document.title" --session work
-python3 -m dctl browser send active Runtime.evaluate --params '{"expression":"document.title"}' --session work
+dctl browser click <TARGET> <CSS> [--session NAME]
+dctl browser type <TARGET> <TEXT> [--selector CSS] [--clear] [--session NAME]
+dctl browser press <TARGET> <COMBO> [--session NAME]
+dctl browser eval <TARGET> <EXPRESSION> [--session NAME] [--no-await-promise]
+dctl browser send <TARGET> <CDP_METHOD> [--params JSON] [--session NAME]
 ```
 
-### Batch mode
+### Batch Mode
 
-`browser batch` lets you chain actions in one round trip.
+Chain multiple operations in a single round trip:
+
+```bash
+dctl browser batch <TARGET> '<JSON_ARRAY>' [--session NAME]
+```
 
 Example:
 
 ```bash
-python3 -m dctl browser batch active '[
+dctl browser batch active '[
   {"op":"activate"},
-  {"op":"type","selector":"input[name=subjectbox]","clear":true,"text":"sent from dctl"},
-  {"op":"type","selector":"div[aria-label=\"Message Body\"][contenteditable=\"true\"]","clear":true,"text":"this shit works"},
+  {"op":"wait-selector","selector":"textarea","timeout":5},
+  {"op":"type","selector":"textarea","clear":true,"text":"Hello from dctl"},
   {"op":"press","combo":"ctrl+enter"}
-]'
+]' --session work
 ```
 
-Batch operations support:
+Supported batch operations: `activate`, `click`, `type`, `press`, `eval`, `wait-selector`, `wait-url`, `snapshot`, `text`, `selection`, `caret`.
 
-- `activate`
-- `click`
-- `type`
-- `press`
-- `eval`
-- `wait-selector`
-- `wait-url`
-- `snapshot`
-- `text`
-- `selection`
-- `caret`
+## LibreOffice
 
-## LibreOffice Commands
-
-### Office process control
+### Process Control
 
 ```bash
-python3 -m dctl libreoffice start --headless
-python3 -m dctl libreoffice stop --pid <PID>
-python3 -m dctl libreoffice docs
-python3 -m dctl libreoffice open <PATH>
-python3 -m dctl libreoffice info <DOCUMENT>
-python3 -m dctl libreoffice save <DOCUMENT>
-python3 -m dctl libreoffice close <DOCUMENT>
+dctl libreoffice start [--headless]
+dctl libreoffice stop [--pid PID]
+dctl libreoffice docs
+dctl libreoffice open <PATH>
+dctl libreoffice info <DOCUMENT>
+dctl libreoffice save <DOCUMENT>
+dctl libreoffice close <DOCUMENT>
 ```
 
 ### Writer
 
 ```bash
-python3 -m dctl libreoffice writer-text <DOCUMENT>
-python3 -m dctl libreoffice writer-paragraphs <DOCUMENT>
-python3 -m dctl libreoffice writer-append <DOCUMENT> <TEXT>
-python3 -m dctl libreoffice writer-set-paragraph <DOCUMENT> <INDEX> <TEXT>
+dctl libreoffice writer-text <DOCUMENT>
+dctl libreoffice writer-paragraphs <DOCUMENT>
+dctl libreoffice writer-append <DOCUMENT> <TEXT>
+dctl libreoffice writer-set-paragraph <DOCUMENT> <INDEX> <TEXT>
 ```
 
 ### Calc
 
 ```bash
-python3 -m dctl libreoffice calc-sheets <DOCUMENT>
-python3 -m dctl libreoffice calc-read <DOCUMENT> <SHEET> <RANGE>
-python3 -m dctl libreoffice calc-write-cell <DOCUMENT> <SHEET> <CELL> <VALUE>
-python3 -m dctl libreoffice calc-write-range <DOCUMENT> <SHEET> <RANGE> <ROWS_JSON>
+dctl libreoffice calc-sheets <DOCUMENT>
+dctl libreoffice calc-read <DOCUMENT> <SHEET> <RANGE>
+dctl libreoffice calc-write-cell <DOCUMENT> <SHEET> <CELL> <VALUE>
+dctl libreoffice calc-write-range <DOCUMENT> <SHEET> <RANGE> <ROWS_JSON>
 ```
 
-## DOCX Commands
+## DOCX
+
+Direct `.docx` editing via python-docx. No GUI required.
 
 ```bash
-python3 -m dctl docx inspect <PATH>
-python3 -m dctl docx read <PATH>
-python3 -m dctl docx paragraphs <PATH>
-python3 -m dctl docx append <PATH> <TEXT>
-python3 -m dctl docx insert-before <PATH> <INDEX> <TEXT>
-python3 -m dctl docx set-paragraph <PATH> <INDEX> <TEXT>
-python3 -m dctl docx replace <PATH> <FIND> <REPLACE>
-python3 -m dctl docx backup <PATH>
-python3 -m dctl docx diff <PATH> --against OTHER.docx
-python3 -m dctl docx worksheet-map <PATH>
-python3 -m dctl docx answer-question <PATH> --question TEXT --answer TEXT [--exact]
-python3 -m dctl docx answer-all <PATH> ANSWERS.json [--exact]
-python3 -m dctl docx fill-table <PATH> --table TITLE_OR_INDEX ENTRIES.json
+dctl docx inspect <PATH>
+dctl docx read <PATH>
+dctl docx paragraphs <PATH>
+dctl docx append <PATH> <TEXT>
+dctl docx insert-before <PATH> <INDEX> <TEXT>
+dctl docx set-paragraph <PATH> <INDEX> <TEXT>
+dctl docx replace <PATH> <FIND> <REPLACE>
+dctl docx backup <PATH>
+dctl docx diff <PATH> --against <OTHER.docx>
+dctl docx worksheet-map <PATH>
+dctl docx answer-question <PATH> --question <TEXT> --answer <TEXT> [--exact]
+dctl docx answer-all <PATH> <ANSWERS.json> [--exact]
+dctl docx fill-table <PATH> --table <TITLE_OR_INDEX> <ENTRIES.json>
 ```
 
-## XLSX Commands
+## XLSX
+
+Direct `.xlsx` editing via openpyxl. No GUI required.
 
 ```bash
-python3 -m dctl xlsx inspect <PATH>
-python3 -m dctl xlsx sheets <PATH>
-python3 -m dctl xlsx read <PATH> <SHEET> <RANGE>
-python3 -m dctl xlsx write-cell <PATH> <SHEET> <CELL> <VALUE>
-python3 -m dctl xlsx write-range <PATH> <SHEET> <RANGE> <ROWS_JSON>
-python3 -m dctl xlsx backup <PATH>
-python3 -m dctl xlsx diff <PATH> --against OTHER.xlsx
-python3 -m dctl xlsx worksheet-map <PATH> [--sheet SHEET]
-python3 -m dctl xlsx locate-cell <PATH> <SHEET> --row-label TEXT --column-label TEXT [--table NAME]
-python3 -m dctl xlsx fill-cell <PATH> <SHEET> --row-label TEXT --column-label TEXT --value VALUE [--table NAME]
-python3 -m dctl xlsx fill-table <PATH> <SHEET> ENTRIES.json [--table NAME]
+dctl xlsx inspect <PATH>
+dctl xlsx sheets <PATH>
+dctl xlsx read <PATH> <SHEET> <RANGE>
+dctl xlsx write-cell <PATH> <SHEET> <CELL> <VALUE>
+dctl xlsx write-range <PATH> <SHEET> <RANGE> <ROWS_JSON>
+dctl xlsx backup <PATH>
+dctl xlsx diff <PATH> --against <OTHER.xlsx>
+dctl xlsx worksheet-map <PATH> [--sheet SHEET]
+dctl xlsx locate-cell <PATH> <SHEET> --row-label <TEXT> --column-label <TEXT> [--table NAME]
+dctl xlsx fill-cell <PATH> <SHEET> --row-label <TEXT> --column-label <TEXT> --value <VALUE> [--table NAME]
+dctl xlsx fill-table <PATH> <SHEET> <ENTRIES.json> [--table NAME]
 ```
 
-## Practical Choice Guide
+## Decision Guide
 
-- Use `browser` for Gmail, Google Docs, Google Sheets, and other web apps.
-- Use `docx` for structured Word files.
-- Use `xlsx` for structured Excel files.
-- Use `libreoffice` when you want live office app control on Linux.
-- Use `click`, `type`, and `key` only when no semantic or file-native path is better.
+| Task | Command |
+|---|---|
+| Web app interaction | `dctl browser` |
+| Edit a `.docx` file | `dctl docx` |
+| Edit a `.xlsx` file | `dctl xlsx` |
+| Live LibreOffice control | `dctl libreoffice` |
+| Desktop app with no better path | `dctl click` / `dctl type` / `dctl key` |

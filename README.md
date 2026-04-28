@@ -1,101 +1,145 @@
 # dctl
 
-`dctl` is a headless desktop control CLI for LLM agents.
+Headless desktop control CLI for LLM agents.
 
-It gives an agent a structured, non-interactive control plane for the desktop:
+`dctl` gives an AI agent structured, non-interactive control over a user's desktop — JSON-first output, deterministic commands, and semantic UI access with raw fallbacks when needed.
 
-- JSON-first output
-- deterministic commands
-- semantic UI access when available
-- raw fallbacks when needed
-- browser, office, DOCX, and XLSX adapters for precise work
+## What It Does
 
-Start here:
+- **Desktop UI automation** — launch apps, enumerate windows, walk accessibility trees, click, type, scroll, and take screenshots
+- **Browser control** — managed Chrome sessions via CDP, tab management, DOM/AX inspection, caret control, batch operations
+- **Document editing** — direct DOCX and XLSX editing via python-docx and openpyxl, no GUI required
+- **LibreOffice bridge** — live Writer and Calc control through the UNO API
+- **Cross-platform** — Linux (AT-SPI + xdotool/ydotool), macOS (AX + Quartz), Windows (UIAutomation + SendInput)
 
-- [Getting Started](docs/GETTING-STARTED.md)
-- [Command Reference](docs/COMMANDS.md)
-- [Browser Guide](docs/BROWSER.md)
-- [Office Guide](docs/OFFICE.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Configuration](docs/CONFIGURATION.md)
-- [Development](docs/DEVELOPMENT.md)
-- [zWork Integration](docs/ZWORK-INTEGRATION.md)
+## Design Philosophy
 
-## What It Is For
+**Semantic before pixels.** `dctl` prefers accessibility APIs and structured file formats over screenshot scraping. It falls back to raw input injection only when necessary.
 
-`dctl` is meant for agents that need to:
+**Stateless commands.** Each CLI invocation is independent. Elements include canonical locators that can be reused in later calls.
 
-- launch and inspect desktop apps
-- click, type, scroll, and focus deterministically
-- read UI state from accessibility trees when available
-- control browser tabs and browser-hosted apps without a terminal session
-- edit Word and Excel files with structure-aware commands
-- mix shell, file, browser, and office workflows in one run
+**Agent-oriented output.** Every command returns a predictable JSON envelope with status, data, and metadata.
 
-## Current State
+## Install
 
-Implemented and working in this repo:
+```bash
+pip install -e .
+```
 
-- Linux-first implementation
-- unified CLI contract intended to carry over to macOS
-- AT-SPI semantic backend on Linux
-- `xdotool` fallback for window/input control on Linux when usable
-- `ydotool` support for text and key fallback when configured
-- app launch and `.desktop` enumeration
-- screenshot capture through Linux helper backends
-- native macOS backend behind the same CLI contract using AX, Quartz, `open`, and `screencapture`
-- managed browser sessions with persistent profiles
-- browser attachment to debug-enabled existing sessions
-- direct DOCX and XLSX editing
-- worksheet-oriented DOCX/XLSX helpers for question sheets and table filling
+Platform extras:
 
-macOS support is implemented in code, but this repo has only been exercised live on Linux in this session.
+```bash
+pip install -e '.[macos]'    # macOS backends
+pip install -e '.[windows]'  # Windows backends
+```
+
+Requires Python 3.11+.
 
 ## Quick Start
 
 ```bash
-python3 -m dctl doctor
-python3 -m dctl capabilities
-python3 -m dctl list-apps
-python3 -m dctl list-launchable
+# Check what's available on this machine
+dctl doctor
+dctl capabilities
+
+# Desktop control
+dctl list-apps
+dctl list-windows
+dctl tree --depth 3
+dctl element 'role:button AND name:"Save"'
+dctl click 'role:button AND name:"OK"'
+dctl type "Hello, world" --into 'role:text_field'
+
+# Browser session
+dctl browser start --session work --app chrome --url https://mail.google.com
+dctl browser tabs --session work
+dctl browser snapshot active --session work
+dctl browser type active "Hello" --selector 'input[name="subjectbox"]' --clear --session work
+
+# Document editing
+dctl docx read paper.docx
+dctl docx worksheet-map paper.docx
+dctl docx answer-question paper.docx --question "What is photosynthesis?" --answer "Plants convert light energy into chemical energy."
+
+dctl xlsx sheets data.xlsx
+dctl xlsx locate-cell data.xlsx Sheet1 --row-label "Oxygen" --column-label "Atomic Number"
+dctl xlsx fill-cell data.xlsx Sheet1 --row-label "Oxygen" --column-label "Atomic Number" --value 8
 ```
 
-Browser session example:
+## Output Format
 
-```bash
-python3 -m dctl browser start --session work --app chrome --url https://mail.google.com
-python3 -m dctl browser sessions
-python3 -m dctl browser tabs --session work
+Every command returns JSON:
+
+```json
+{
+  "status": "ok",
+  "data": { ... },
+  "meta": {
+    "platform": "linux",
+    "session_type": "wayland",
+    "backend": { ... },
+    "timestamp": "2026-04-27T12:00:00Z"
+  }
+}
 ```
 
-Document example:
+Errors include a stable code, message, and remediation suggestion:
 
-```bash
-python3 -m dctl docx worksheet-map paper.docx
-python3 -m dctl docx answer-question paper.docx --question "What is photosynthesis?" --answer "Plants convert light energy into chemical energy."
-python3 -m dctl xlsx fill-cell sheet.xlsx Sheet1 --row-label "Oxygen" --column-label "Atomic Number" --value 8
+```json
+{
+  "status": "error",
+  "error": {
+    "code": "ELEMENT_NOT_FOUND",
+    "message": "No element matched the selector.",
+    "suggestion": "Try broadening the selector or use 'tree' to inspect available elements."
+  }
+}
 ```
 
-## Runtime Expectations
+## Documentation
 
-Best Linux experience:
+| Document | Description |
+|---|---|
+| [Getting Started](docs/GETTING-STARTED.md) | Installation and first-run guide |
+| [Command Reference](docs/COMMANDS.md) | Full CLI command reference |
+| [Architecture](docs/ARCHITECTURE.md) | System design and backend strategy |
+| [Browser Guide](docs/BROWSER.md) | Browser automation with CDP |
+| [Office Guide](docs/OFFICE.md) | DOCX, XLSX, and LibreOffice editing |
+| [Configuration](docs/CONFIGURATION.md) | Environment variables and runtime config |
+| [Development](docs/DEVELOPMENT.md) | Contributing and extending dctl |
+| [Roadmap](ROADMAP.md) | Project vision and planned milestones |
+| [Agent Integration](agents/README.md) | Integrating dctl into LLM agent loops |
 
-- AT-SPI accessibility bus available
-- `xdg-open` installed
-- `grim`, `spectacle`, or `scrot` installed
-- `xdotool` available for X11 or XWayland fallback
+## Project Structure
 
-Wayland note:
+```
+dctl/
+  dctl/
+    cli.py              CLI definition and command dispatch
+    models.py           Data models (Bounds, WindowInfo, AppInfo, ElementInfo)
+    errors.py           Stable error codes and exit codes
+    output.py           JSON output envelope
+    selector.py         Selector parser with boolean AND/OR logic
+    locator.py          Canonical locator builder
+    capabilities.py     Runtime capability detection
+    doctor.py           Diagnostic report builder
+    adapters/
+      browser_cdp.py    Chrome DevTools Protocol adapter
+      docx_files.py     DOCX editing via python-docx
+      xlsx_files.py     XLSX editing via openpyxl
+      libreoffice_uno.py LibreOffice UNO bridge
+    platform/
+      base.py           Abstract DesktopBackend
+      detect.py         OS/session/helper detection
+      manager.py        DesktopManager — unified API routing
+      linux/            AT-SPI, xdotool, ydotool, grim/scrot
+      macos/            AX, Quartz, AppKit, screencapture
+      windows/          UIAutomation, SendInput, GDI, Win32
+  agents/                LLM agent integration artifacts
+  tests/                 Unit tests
+  docs/                  Documentation
+```
 
-- semantic AT-SPI access is the preferred path
-- `ydotool` may work for input fallback, but it requires a running `ydotoold` and usable socket access
-- `xdotool` is only useful where X11/XWayland access is actually available
+## License
 
-## Why This Matters for zWork
-
-zWork is strongest when it can stay text-native. `dctl` is the desktop layer that lets zWork:
-
-- avoid brittle screenshot-only control
-- use the browser as a controlled text surface
-- edit files directly when the format is known
-- fall back to GUI control only when necessary
+MIT

@@ -1,139 +1,142 @@
-# zWork Integration
+# Agent Integration Guide
 
-This is the guide for using `dctl` as the desktop control layer for zWork.
+This guide covers how to integrate `dctl` into an LLM agent loop. The same patterns apply to any agent framework — Claude, GPT-4, Gemini, or custom systems.
 
-## The Mental Model
+## Mental Model
 
-zWork should treat `dctl` as the agent's hands:
+An agent should treat `dctl` as four distinct control surfaces:
 
-- browser hands
-- office hands
-- file-format hands
-- desktop fallback hands
+- **Browser hands** — `dctl browser` for web apps
+- **File hands** — `dctl docx` and `dctl xlsx` for structured documents
+- **Office hands** — `dctl libreoffice` for live app control
+- **Desktop hands** — desktop commands for apps with no better path
 
-The goal is to stay text-native whenever possible.
+Stay text-native whenever possible. Use the most structured path available.
 
-## Backend Choice Rules
+## Backend Selection Rules
 
-### Use `docx` first for `.docx`
+### `.docx` files → `dctl docx`
 
-If the task is to edit a Word file directly, do not route it through the browser or a GUI unless you have to.
-
-Use:
+Do not route through the browser or GUI.
 
 ```bash
-python3 -m dctl docx inspect file.docx
-python3 -m dctl docx worksheet-map file.docx
-python3 -m dctl docx answer-question file.docx --question "..." --answer "..."
+dctl docx inspect file.docx
+dctl docx worksheet-map file.docx
+dctl docx answer-question file.docx --question "..." --answer "..."
 ```
 
-### Use `xlsx` first for `.xlsx`
+### `.xlsx` files → `dctl xlsx`
 
-If the task is spreadsheet editing, go straight to the workbook model.
-
-Use:
+Go straight to the workbook model.
 
 ```bash
-python3 -m dctl xlsx worksheet-map sheet.xlsx
-python3 -m dctl xlsx locate-cell sheet.xlsx Sheet1 --row-label "..." --column-label "..."
-python3 -m dctl xlsx fill-cell sheet.xlsx Sheet1 --row-label "..." --column-label "..." --value "..."
+dctl xlsx worksheet-map sheet.xlsx
+dctl xlsx fill-cell sheet.xlsx Sheet1 --row-label "..." --column-label "..." --value "..."
 ```
 
-### Use `browser` for web apps
+### Web apps → `dctl browser`
 
-For Gmail, Google Docs, Google Sheets, and browser-hosted CRMs or tools, use the browser adapter.
-
-Use a managed session:
+For Gmail, Google Docs, Google Sheets, and browser-hosted tools.
 
 ```bash
-python3 -m dctl browser start --session work --app chrome --url https://mail.google.com
+dctl browser start --session work --app chrome --url https://mail.google.com
+dctl browser snapshot active --session work
+dctl browser type active "Hello" --selector 'input[name="q"]' --clear --session work
 ```
 
-Then keep that session open and reuse it by name.
+### Everything else → Desktop commands
+
+Only when no structured path is available.
+
+```bash
+dctl click 'role:button AND name:"Save"'
+dctl type "text" --into 'role:text_field'
+```
 
 ## Recommended Agent Loop
 
-1. Inspect capabilities.
-2. Decide whether the task is file-native, browser-native, or desktop-only.
-3. Snapshot the current state.
-4. Perform one bounded action.
-5. Verify the result.
-6. Repeat.
+1. Inspect capabilities with `dctl capabilities`
+2. Decide the control surface: file, browser, office, or desktop
+3. Snapshot current state
+4. Perform one bounded action
+5. Verify the result
+6. Repeat
 
-Do not skip verification for editing tasks.
+**Do not skip verification for editing tasks.** Always re-read after mutation.
 
-## Browser Workflow for zWork
+## Tool Mapping
 
-Use this flow for browser-hosted tasks:
+If exposing `dctl` as agent tools, prefer narrow tools over a generic shell wrapper:
 
-1. `browser start` or `browser attach`
-2. `browser tabs` and `browser active-tab`
-3. `browser snapshot active`
-4. `browser wait-selector` for the editor or form
-5. `browser type`, `browser press`, or `browser caret`
-6. `browser snapshot active` again
-7. send only after the compose or editor state is correct
+| Tool | Maps to |
+|---|---|
+| `desktop_list_apps` | `dctl list-apps` |
+| `desktop_list_windows` | `dctl list-windows` |
+| `desktop_tree` | `dctl tree` |
+| `desktop_element` | `dctl element <selector>` |
+| `desktop_read` | `dctl read <selector>` |
+| `desktop_click` | `dctl click <selector>` |
+| `desktop_type` | `dctl type <text> --into <selector>` |
+| `desktop_key` | `dctl key <combo>` |
+| `desktop_screenshot` | `dctl screenshot` |
+| `browser_start` | `dctl browser start` |
+| `browser_snapshot` | `dctl browser snapshot` |
+| `browser_type` | `dctl browser type` |
 
-### Gmail example
+Narrow tools make agent prompting and tool selection more reliable.
 
-For Gmail, do not trust the inbox preview as proof of the subject field.
+## Gmail Workflow
 
-Instead:
+Gmail is a common test surface with specific pitfalls:
 
-1. open compose
-2. verify `input[aria-label="To recipients"]`
-3. verify `input[name="subjectbox"]`
-4. verify the real body editor, not just a hidden textarea mirror
-5. re-read the DOM values before sending
+1. Open compose
+2. Wait for `input[aria-label="To recipients"]`
+3. Wait for `input[name="subjectbox"]`
+4. Wait for the body editor `div[aria-label="Message Body"][contenteditable="true"]`
+5. Type into each field with `--clear`
+6. Re-read DOM values before sending
+7. Send with `ctrl+enter`
+8. Verify sent state
 
-This avoids the exact subject/body confusion that often happens with generic automation.
+Do not trust the inbox preview as proof of subject/body content. The conversation list shows adjacent text that looks like the compose form but isn't.
 
-### Google Docs example
+## Google Docs Workflow
 
-For Google Docs, the flow should be:
+1. Focus the correct tab
+2. Inspect with `snapshot`
+3. Place the caret
+4. Use `press` for formatting shortcuts
+5. Use `type` for content
+6. Verify after each paragraph or formatting block
 
-1. focus the correct tab
-2. place the caret
-3. use `press` for formatting shortcuts
-4. use `type` for the actual text
-5. verify the page state after each block
+## Office Workflow
 
-If the document structure matters, inspect with `snapshot`, `dom`, or `text` before editing.
+For worksheet-style documents:
 
-## Office Workflow for zWork
+1. Run `worksheet-map` to understand the structure
+2. Find the question/prompt pattern
+3. Write only the answer text
+4. Preserve formatting anchors
+5. Verify the final document
 
-For worksheet-like documents:
+This applies to homework sheets, form-style documents, tables with prompts and answer cells, and spreadsheets with headers and labeled rows.
 
-- use `docx worksheet-map` or `xlsx worksheet-map`
-- find the prompt/question structure
-- write only the answer text
-- preserve formatting anchors
-- verify the final document after writing
+## Safety Rules
 
-That is the right way to handle:
+- Do not guess at hidden GUI state — inspect first
+- Do not chain destructive edits without checking intermediate results
+- Use managed browser sessions for login persistence
+- Use file-model edits for known formats
+- Prefer `batch` when several browser actions can be verified together
 
-- homework sheets
-- form-style documents
-- tables with prompts and answer cells
-- spreadsheets with headers and labeled rows
+## Fallback Hierarchy
 
-## Safety Rules for Agents
+When the primary path isn't enough:
 
-- Do not guess at hidden GUI state.
-- Do not chain destructive edits without checking the intermediate result.
-- Use managed browser sessions for login persistence.
-- Use file-model edits for known formats.
-- Prefer `batch` when several browser actions are independent and can be verified together.
-
-## When to Fall Back
-
-If the app does not expose enough structure:
-
-- try `browser eval`
-- try `browser dom`
-- try `browser caret`
-- try `browser press`
-- then use desktop `click` / `type` / `key`
-
-Do not start with screen scraping unless the app forces it.
-
+1. `browser eval` — JavaScript-level access
+2. `browser dom` — raw HTML structure
+3. `browser ax` — accessibility tree
+4. `browser caret` — precise positioning
+5. Keyboard flow with `browser press`
+6. Desktop commands (`dctl click`, `dctl type`, `dctl key`)
+7. Screenshot + `describe` only as last resort
