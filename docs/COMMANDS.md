@@ -89,7 +89,7 @@ dctl browser attach [--session NAME] [--port PORT] [--endpoint URL]
 ### Tab Control
 
 ```bash
-dctl browser tabs [--session NAME] [--include-non-pages]
+dctl browser tabs [--session NAME] [--include-non-pages] [--url-contains TEXT] [--title-contains TEXT]
 dctl browser active-tab [--session NAME]
 dctl browser targets [--session NAME]
 dctl browser open <URL> [--session NAME]
@@ -97,30 +97,42 @@ dctl browser activate <TARGET> [--session NAME]
 dctl browser close <TARGET> [--session NAME]
 ```
 
+`tabs` now returns ranked candidates with `targetScore`, `isPreferred`, and `recommendedTargetId`. After `browser activate` or `browser open`, the session keeps a preferred working tab; `active` resolves to that tab when available.
+
 ### Inspection
 
 ```bash
-dctl browser snapshot <TARGET> [--session NAME] [--text-limit N]
-dctl browser text <TARGET> [--selector CSS] [--session NAME]
-dctl browser dom <TARGET> [--selector CSS] [--depth N] [--session NAME]
-dctl browser ax <TARGET> [--selector CSS] [--session NAME]
+dctl browser snapshot <TARGET> [--session NAME] [--text-limit N] [--max-items N] [--min-text N] [--max-text N] [--strict]
+dctl browser selector <TARGET> <CSS> [--sample-limit N] [--session NAME]
+dctl browser actions <TARGET> [--query TEXT] [--role ROLE] [--sample-limit N] [--session NAME]
+dctl browser text <TARGET> [--selector CSS] [--strict-selector] [--session NAME]
+dctl browser dom <TARGET> [--selector CSS] [--depth N] [--strict-selector] [--session NAME]
+dctl browser ax <TARGET> [--selector CSS] [--strict-selector] [--session NAME]
 dctl browser selection <TARGET> [--session NAME]
 dctl browser caret <TARGET> [--selector CSS] [--start N] [--end N] [--session NAME]
 dctl browser wait-url <TARGET> <NEEDLE> [--timeout N] [--session NAME]
-dctl browser wait-selector <TARGET> <CSS> [--timeout N] [--session NAME]
+dctl browser wait-selector <TARGET> <CSS> [--timeout N] [--strict-selector] [--session NAME]
 ```
 
-`snapshot` returns a high-level text representation of the page — good for understanding page state. `dom` and `ax` provide deeper structural access.
+`snapshot` returns a structured view of visible page state (text, headings, landmarks, interactive elements, detected LaTeX/MathML payloads, visual structure hints from SVG/canvas/image surfaces, and extraction coverage diagnostics). Use `--strict` to fail when extraction quality issues are detected.
+`selector` is a read-only selector diagnostic to verify match cardinality before interactive commands.
 
 ### Editing
 
 ```bash
+dctl browser act <TARGET> [--query TEXT] [--role ROLE] [--action-id N] [--wait-selector CSS] [--wait-url TEXT] [--snapshot] [--session NAME]
 dctl browser click <TARGET> <CSS> [--session NAME]
+dctl browser click-action <TARGET> <ACTION_ID> [--query TEXT] [--role ROLE] [--session NAME]
 dctl browser type <TARGET> <TEXT> [--selector CSS] [--clear] [--session NAME]
 dctl browser press <TARGET> <COMBO> [--session NAME]
-dctl browser eval <TARGET> <EXPRESSION> [--session NAME] [--no-await-promise]
+dctl browser eval <TARGET> <EXPRESSION> [--session NAME] [--no-await-promise] [--return-by-value]
 dctl browser send <TARGET> <CDP_METHOD> [--params JSON] [--session NAME]
 ```
+
+`browser click` and `browser type --selector ...` fail with `MULTIPLE_MATCHES` when selectors are ambiguous.
+`browser text/dom/ax/wait-selector` also fail on ambiguous selectors when `--strict-selector` is enabled.
+`browser click-action` fails loudly with explicit diagnostics when `ACTION_ID` is missing or disabled.
+`browser act` composes semantic discovery + click + optional wait/snapshot into one deterministic call and returns per-step results.
 
 ### Batch Mode
 
@@ -141,7 +153,8 @@ dctl browser batch active '[
 ]' --session work
 ```
 
-Supported batch operations: `activate`, `click`, `type`, `press`, `eval`, `wait-selector`, `wait-url`, `snapshot`, `text`, `selection`, `caret`.
+Supported batch operations: `activate`, `click`, `type`, `press`, `eval`, `actions`, `click-action`, `act`, `wait-selector`, `wait-url`, `snapshot`, `text`, `dom`, `ax`, `selector`, `selection`, `caret`.
+Batch responses include `timingsMs` with total and per-operation latency measurements.
 
 ## LibreOffice
 

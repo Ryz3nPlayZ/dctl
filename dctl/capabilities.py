@@ -42,6 +42,7 @@ def collect_capabilities(env: EnvironmentInfo) -> dict[str, Any]:
         "office": None,
         "docx": None,
         "xlsx": None,
+        "clipboard": None,
     }
 
     diagnostics: dict[str, Any] = {
@@ -126,6 +127,11 @@ def collect_capabilities(env: EnvironmentInfo) -> dict[str, Any]:
         else:
             warnings.append("The `openpyxl` module is missing; XLSX commands will fail.")
 
+        if env.helpers.get("wl-paste") and env.helpers.get("wl-copy"):
+            providers["clipboard"] = "wl-clipboard"
+        elif env.helpers.get("xclip"):
+            providers["clipboard"] = "xclip"
+
         commands = {
             "capabilities": True,
             "doctor": True,
@@ -151,6 +157,7 @@ def collect_capabilities(env: EnvironmentInfo) -> dict[str, Any]:
             "word": providers["docx"] is not None,
             "xlsx": providers["xlsx"] is not None,
             "excel": providers["xlsx"] is not None,
+            "clipboard": providers["clipboard"] is not None,
         }
     elif env.platform == "darwin":
         ax_importable = importlib.util.find_spec("ApplicationServices") is not None
@@ -222,6 +229,8 @@ def collect_capabilities(env: EnvironmentInfo) -> dict[str, Any]:
         else:
             warnings.append("ApplicationServices PyObjC module is not available; AX commands will fail.")
 
+        providers["clipboard"] = "pbpaste/pbcopy"
+
         commands = {name: False for name in [
             "capabilities",
             "doctor",
@@ -247,6 +256,7 @@ def collect_capabilities(env: EnvironmentInfo) -> dict[str, Any]:
             "word",
             "xlsx",
             "excel",
+            "clipboard",
         ]}
         commands["capabilities"] = True
         commands["doctor"] = True
@@ -272,6 +282,7 @@ def collect_capabilities(env: EnvironmentInfo) -> dict[str, Any]:
         commands["word"] = providers["docx"] is not None
         commands["xlsx"] = providers["xlsx"] is not None
         commands["excel"] = providers["xlsx"] is not None
+        commands["clipboard"] = True
     elif env.platform == "windows":
         comtypes_importable = _module_importable("comtypes")
         winreg_importable = _module_importable("winreg")
@@ -337,6 +348,8 @@ def collect_capabilities(env: EnvironmentInfo) -> dict[str, Any]:
         else:
             warnings.append("The `openpyxl` module is missing; XLSX commands will fail.")
 
+        providers["clipboard"] = "powershell" if env.helpers.get("powershell") else None
+
         commands = {
             "capabilities": True,
             "doctor": True,
@@ -362,6 +375,7 @@ def collect_capabilities(env: EnvironmentInfo) -> dict[str, Any]:
             "word": providers["docx"] is not None,
             "xlsx": providers["xlsx"] is not None,
             "excel": providers["xlsx"] is not None,
+            "clipboard": providers["clipboard"] is not None,
         }
     else:
         warnings.append(f"Unsupported platform: {env.platform}")

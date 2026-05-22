@@ -4,7 +4,6 @@ import argparse
 from datetime import datetime, timezone
 from typing import Any
 
-from dctl.adapters import browser_cdp, docx_files, libreoffice_uno, xlsx_files
 from dctl.errors import DctlError, as_dctl_error
 from dctl.output import emit_error, emit_success
 from dctl.platform import DesktopManager
@@ -51,6 +50,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     click_parser = subparsers.add_parser("click")
     click_parser.add_argument("selector")
+    click_parser.add_argument("--button", choices=["left", "right", "middle"], default="left")
+    click_parser.add_argument("--double", action="store_true")
 
     type_parser = subparsers.add_parser("type")
     type_parser.add_argument("text")
@@ -62,6 +63,12 @@ def build_parser() -> argparse.ArgumentParser:
     scroll_parser = subparsers.add_parser("scroll")
     scroll_parser.add_argument("direction")
     scroll_parser.add_argument("--amount", type=int, default=1)
+
+    clipboard_parser = subparsers.add_parser("clipboard")
+    clipboard_subparsers = clipboard_parser.add_subparsers(dest="clipboard_command", required=True)
+    clipboard_subparsers.add_parser("read")
+    clipboard_write_parser = clipboard_subparsers.add_parser("write")
+    clipboard_write_parser.add_argument("text")
 
     screenshot_parser = subparsers.add_parser("screenshot")
     screenshot_parser.add_argument("--screen", type=int)
@@ -115,6 +122,8 @@ def build_parser() -> argparse.ArgumentParser:
     browser_tabs.add_argument("--port", type=int)
     browser_tabs.add_argument("--session")
     browser_tabs.add_argument("--include-non-pages", action="store_true")
+    browser_tabs.add_argument("--url-contains")
+    browser_tabs.add_argument("--title-contains")
 
     browser_active_tab = browser_subparsers.add_parser("active-tab")
     browser_active_tab.add_argument("--endpoint")
@@ -146,6 +155,7 @@ def build_parser() -> argparse.ArgumentParser:
     browser_eval.add_argument("--port", type=int)
     browser_eval.add_argument("--session")
     browser_eval.add_argument("--no-await-promise", action="store_true")
+    browser_eval.add_argument("--return-by-value", action="store_true")
 
     browser_dom = browser_subparsers.add_parser("dom")
     browser_dom.add_argument("target")
@@ -155,6 +165,7 @@ def build_parser() -> argparse.ArgumentParser:
     browser_dom.add_argument("--endpoint")
     browser_dom.add_argument("--port", type=int)
     browser_dom.add_argument("--session")
+    browser_dom.add_argument("--strict-selector", action="store_true")
 
     browser_ax = browser_subparsers.add_parser("ax")
     browser_ax.add_argument("target")
@@ -162,6 +173,7 @@ def build_parser() -> argparse.ArgumentParser:
     browser_ax.add_argument("--endpoint")
     browser_ax.add_argument("--port", type=int)
     browser_ax.add_argument("--session")
+    browser_ax.add_argument("--strict-selector", action="store_true")
 
     browser_text = browser_subparsers.add_parser("text")
     browser_text.add_argument("target")
@@ -169,6 +181,24 @@ def build_parser() -> argparse.ArgumentParser:
     browser_text.add_argument("--endpoint")
     browser_text.add_argument("--port", type=int)
     browser_text.add_argument("--session")
+    browser_text.add_argument("--strict-selector", action="store_true")
+
+    browser_selector = browser_subparsers.add_parser("selector")
+    browser_selector.add_argument("target")
+    browser_selector.add_argument("selector")
+    browser_selector.add_argument("--sample-limit", type=int, default=20)
+    browser_selector.add_argument("--endpoint")
+    browser_selector.add_argument("--port", type=int)
+    browser_selector.add_argument("--session")
+
+    browser_actions = browser_subparsers.add_parser("actions")
+    browser_actions.add_argument("target")
+    browser_actions.add_argument("--query")
+    browser_actions.add_argument("--role")
+    browser_actions.add_argument("--sample-limit", type=int, default=60)
+    browser_actions.add_argument("--endpoint")
+    browser_actions.add_argument("--port", type=int)
+    browser_actions.add_argument("--session")
 
     browser_selection = browser_subparsers.add_parser("selection")
     browser_selection.add_argument("target")
@@ -191,6 +221,10 @@ def build_parser() -> argparse.ArgumentParser:
     browser_snapshot.add_argument("--port", type=int)
     browser_snapshot.add_argument("--session")
     browser_snapshot.add_argument("--text-limit", type=int, default=4000)
+    browser_snapshot.add_argument("--max-items", type=int, default=120)
+    browser_snapshot.add_argument("--min-text", type=int, default=120)
+    browser_snapshot.add_argument("--max-text", type=int)
+    browser_snapshot.add_argument("--strict", action="store_true")
 
     browser_wait_url = browser_subparsers.add_parser("wait-url")
     browser_wait_url.add_argument("target")
@@ -210,6 +244,7 @@ def build_parser() -> argparse.ArgumentParser:
     browser_wait_selector.add_argument("--timeout", type=float, default=10.0)
     browser_wait_selector.add_argument("--interval", type=int, default=250)
     browser_wait_selector.add_argument("--visible", action="store_true")
+    browser_wait_selector.add_argument("--strict-selector", action="store_true")
 
     browser_click = browser_subparsers.add_parser("click")
     browser_click.add_argument("target")
@@ -217,6 +252,34 @@ def build_parser() -> argparse.ArgumentParser:
     browser_click.add_argument("--endpoint")
     browser_click.add_argument("--port", type=int)
     browser_click.add_argument("--session")
+
+    browser_click_action = browser_subparsers.add_parser("click-action")
+    browser_click_action.add_argument("target")
+    browser_click_action.add_argument("action_id", type=int)
+    browser_click_action.add_argument("--query")
+    browser_click_action.add_argument("--role")
+    browser_click_action.add_argument("--endpoint")
+    browser_click_action.add_argument("--port", type=int)
+    browser_click_action.add_argument("--session")
+
+    browser_act = browser_subparsers.add_parser("act")
+    browser_act.add_argument("target")
+    browser_act.add_argument("--query")
+    browser_act.add_argument("--role")
+    browser_act.add_argument("--action-id", type=int)
+    browser_act.add_argument("--wait-selector")
+    browser_act.add_argument("--wait-url")
+    browser_act.add_argument("--timeout", type=float, default=10.0)
+    browser_act.add_argument("--interval", type=int, default=250)
+    browser_act.add_argument("--snapshot", action="store_true")
+    browser_act.add_argument("--snapshot-strict", action="store_true")
+    browser_act.add_argument("--snapshot-text-limit", type=int, default=4000)
+    browser_act.add_argument("--snapshot-max-items", type=int, default=120)
+    browser_act.add_argument("--snapshot-min-text", type=int, default=120)
+    browser_act.add_argument("--snapshot-max-text", type=int)
+    browser_act.add_argument("--endpoint")
+    browser_act.add_argument("--port", type=int)
+    browser_act.add_argument("--session")
 
     browser_type = browser_subparsers.add_parser("type")
     browser_type.add_argument("target")
@@ -488,13 +551,19 @@ def dispatch(args: argparse.Namespace, manager: DesktopManager) -> Any:
     if command == "focus":
         return manager.focus(args.selector)
     if command == "click":
-        return manager.click(args.selector)
+        return manager.click(args.selector, button=args.button, double=args.double)
     if command == "type":
         return manager.type_text(args.text, args.into)
     if command == "key":
         return manager.press_key(args.combo)
     if command == "scroll":
         return manager.scroll(args.direction, args.amount)
+    if command == "clipboard":
+        from dctl.adapters.clipboard import clipboard_read, clipboard_write
+        if args.clipboard_command == "read":
+            return clipboard_read(manager.env)
+        if args.clipboard_command == "write":
+            return clipboard_write(args.text, manager.env)
     if command == "screenshot":
         return manager.screenshot(
             screen=args.screen,
@@ -504,6 +573,8 @@ def dispatch(args: argparse.Namespace, manager: DesktopManager) -> Any:
             as_base64=args.base64,
         )
     if command == "browser":
+        from dctl.adapters import browser_cdp
+
         subcommand = args.browser_command
         if subcommand == "start":
             return browser_cdp.start_browser(
@@ -533,6 +604,8 @@ def dispatch(args: argparse.Namespace, manager: DesktopManager) -> Any:
                 endpoint=args.endpoint,
                 port=args.port,
                 include_non_pages=args.include_non_pages,
+                url_contains=args.url_contains,
+                title_contains=args.title_contains,
                 session_name=args.session,
             )
         if subcommand == "active-tab":
@@ -551,6 +624,7 @@ def dispatch(args: argparse.Namespace, manager: DesktopManager) -> Any:
                 port=args.port,
                 session_name=args.session,
                 await_promise=not args.no_await_promise,
+                return_by_value=args.return_by_value,
             )
         if subcommand == "dom":
             return browser_cdp.dom(
@@ -561,6 +635,7 @@ def dispatch(args: argparse.Namespace, manager: DesktopManager) -> Any:
                 selector=args.selector,
                 depth=args.depth,
                 pierce=not args.no_pierce,
+                strict_selector=args.strict_selector,
             )
         if subcommand == "ax":
             return browser_cdp.accessibility_tree(
@@ -569,6 +644,7 @@ def dispatch(args: argparse.Namespace, manager: DesktopManager) -> Any:
                 port=args.port,
                 session_name=args.session,
                 selector=args.selector,
+                strict_selector=args.strict_selector,
             )
         if subcommand == "text":
             return browser_cdp.text(
@@ -577,6 +653,26 @@ def dispatch(args: argparse.Namespace, manager: DesktopManager) -> Any:
                 port=args.port,
                 session_name=args.session,
                 selector=args.selector,
+                strict_selector=args.strict_selector,
+            )
+        if subcommand == "selector":
+            return browser_cdp.selector_audit(
+                args.target,
+                args.selector,
+                endpoint=args.endpoint,
+                port=args.port,
+                session_name=args.session,
+                sample_limit=args.sample_limit,
+            )
+        if subcommand == "actions":
+            return browser_cdp.actions(
+                args.target,
+                endpoint=args.endpoint,
+                port=args.port,
+                session_name=args.session,
+                sample_limit=args.sample_limit,
+                query=args.query,
+                role=args.role,
             )
         if subcommand == "selection":
             return browser_cdp.selection(args.target, endpoint=args.endpoint, port=args.port, session_name=args.session)
@@ -597,6 +693,10 @@ def dispatch(args: argparse.Namespace, manager: DesktopManager) -> Any:
                 port=args.port,
                 session_name=args.session,
                 text_limit=args.text_limit,
+                max_items=args.max_items,
+                min_text=args.min_text,
+                max_text=args.max_text,
+                strict=args.strict,
             )
         if subcommand == "wait-url":
             return browser_cdp.wait_url(
@@ -618,9 +718,40 @@ def dispatch(args: argparse.Namespace, manager: DesktopManager) -> Any:
                 timeout=args.timeout,
                 interval_ms=args.interval,
                 visible=args.visible,
+                strict_selector=args.strict_selector,
             )
         if subcommand == "click":
             return browser_cdp.click(args.target, args.selector, endpoint=args.endpoint, port=args.port, session_name=args.session)
+        if subcommand == "click-action":
+            return browser_cdp.click_action(
+                args.target,
+                args.action_id,
+                endpoint=args.endpoint,
+                port=args.port,
+                session_name=args.session,
+                query=args.query,
+                role=args.role,
+            )
+        if subcommand == "act":
+            return browser_cdp.act(
+                args.target,
+                endpoint=args.endpoint,
+                port=args.port,
+                session_name=args.session,
+                query=args.query,
+                role=args.role,
+                action_id=args.action_id,
+                wait_selector_css=args.wait_selector,
+                wait_url_needle=args.wait_url,
+                timeout=args.timeout,
+                interval_ms=args.interval,
+                snapshot_after=args.snapshot,
+                snapshot_strict=args.snapshot_strict,
+                snapshot_text_limit=args.snapshot_text_limit,
+                snapshot_max_items=args.snapshot_max_items,
+                snapshot_min_text=args.snapshot_min_text,
+                snapshot_max_text=args.snapshot_max_text,
+            )
         if subcommand == "type":
             return browser_cdp.type_text(
                 args.target,
@@ -652,6 +783,16 @@ def dispatch(args: argparse.Namespace, manager: DesktopManager) -> Any:
             )
         raise DctlError("UNKNOWN", f"Unsupported browser command '{subcommand}'.")
     if command == "libreoffice":
+        try:
+            from dctl.adapters import libreoffice_uno
+        except ModuleNotFoundError as exc:
+            if exc.name == "uno":
+                raise DctlError(
+                    "DEPENDENCY_MISSING",
+                    "The `uno` module is missing; LibreOffice commands are unavailable.",
+                    suggestion="Install LibreOffice Python bindings (python-uno) to use `dctl libreoffice`.",
+                ) from exc
+            raise
         subcommand = args.libreoffice_command
         if subcommand == "start":
             return libreoffice_uno.start_office(port=args.port, headless=args.headless, executable=args.exec)
@@ -692,6 +833,8 @@ def dispatch(args: argparse.Namespace, manager: DesktopManager) -> Any:
             return libreoffice_uno.calc_write_range(args.document, args.sheet, args.range, args.rows_json, port=args.port)
         raise DctlError("UNKNOWN", f"Unsupported LibreOffice command '{subcommand}'.")
     if command in {"docx", "word"}:
+        from dctl.adapters import docx_files
+
         subcommand = args.docx_command
         if subcommand == "inspect":
             return docx_files.inspect(args.path)
@@ -721,6 +864,8 @@ def dispatch(args: argparse.Namespace, manager: DesktopManager) -> Any:
             return docx_files.fill_table(args.path, args.table, args.entries_json)
         raise DctlError("UNKNOWN", f"Unsupported DOCX command '{subcommand}'.")
     if command in {"xlsx", "excel"}:
+        from dctl.adapters import xlsx_files
+
         subcommand = args.xlsx_command
         if subcommand == "inspect":
             return xlsx_files.inspect(args.path)

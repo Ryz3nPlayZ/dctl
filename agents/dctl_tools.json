@@ -27,8 +27,8 @@
         "properties": {
           "action": {
             "type": "string",
-            "enum": ["tree", "element", "read", "click", "type", "key", "focus", "scroll", "wait", "describe", "screenshot"],
-            "description": "The UI interaction to perform. 'tree' dumps the accessibility hierarchy; 'click' triggers a button; 'type' inserts text; 'describe' identifies what is at coordinates."
+            "enum": ["tree", "element", "read", "click", "type", "key", "focus", "scroll", "wait", "describe", "screenshot", "clipboard"],
+            "description": "The UI interaction to perform. 'tree' dumps the accessibility hierarchy; 'click' triggers a button; 'type' inserts text; 'describe' identifies what is at coordinates; 'clipboard' reads or writes the system clipboard."
           },
           "selector": {
             "type": "string",
@@ -36,7 +36,23 @@
           },
           "text": {
             "type": "string",
-            "description": "The text to type into the element (used with action='type')."
+            "description": "The text to type into the element (used with action='type'), or text to write to clipboard (used with action='clipboard' and clipboard_action='write')."
+          },
+          "button": {
+            "type": "string",
+            "enum": ["left", "right", "middle"],
+            "default": "left",
+            "description": "Mouse button for click action. Use 'right' for context menu."
+          },
+          "double": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether to double-click (used with action='click')."
+          },
+          "clipboard_action": {
+            "type": "string",
+            "enum": ["read", "write"],
+            "description": "Clipboard operation. 'read' returns current clipboard text; 'write' stores the text parameter."
           },
           "combo": {
             "type": "string",
@@ -66,8 +82,8 @@
         "properties": {
           "action": {
             "type": "string",
-            "enum": ["start", "tabs", "open", "activate", "ax", "dom", "click", "type", "press", "eval", "wait-url", "wait-selector", "snapshot"],
-            "description": "Browser action. 'ax' returns the browser's internal accessibility tree; 'dom' returns raw HTML/DOM structure; 'snapshot' returns a high-level summary of the page text."
+            "enum": ["start", "tabs", "targets", "active-tab", "open", "activate", "close", "ax", "dom", "text", "selector", "actions", "selection", "caret", "click", "click-action", "act", "type", "press", "eval", "send", "wait-url", "wait-selector", "snapshot", "batch"],
+            "description": "Browser action. Use `actions` + `click-action` for semantic clicking, `selector` for deterministic CSS diagnostics, and `snapshot` for structured page extraction."
           },
           "target": {
             "type": "string",

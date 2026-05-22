@@ -59,6 +59,13 @@ YDOTOOL_BUTTONS = {
     "middle": "0xC2",
 }
 
+YDOTOOL_SCROLL = {
+    "up": "0xC4",
+    "down": "0xC5",
+    "left": "0xC6",
+    "right": "0xC7",
+}
+
 
 def probe_xdotool(helper_path: str | None) -> bool:
     if not helper_path:
@@ -137,6 +144,15 @@ def ydotool_click_args(button: str = "left", repeat: int = 1) -> list[str]:
     args = ["click"]
     if repeat > 1:
         args.extend(["--repeat", str(repeat), "--next-delay", "25"])
+    args.append(code)
+    return args
+
+
+def ydotool_scroll_args(direction: str, amount: int = 1) -> list[str]:
+    code = YDOTOOL_SCROLL.get(direction.strip().lower())
+    if code is None:
+        raise DctlError("INVALID_SELECTOR", f"Unsupported scroll direction '{direction}'.")
+    args = ["click", "--repeat", str(max(amount, 1)), "--next-delay", "20"]
     args.append(code)
     return args
 

@@ -58,6 +58,10 @@ def detect_environment() -> EnvironmentInfo:
         # ---- office ----
         "libreoffice": shutil.which("libreoffice"),
         "soffice": shutil.which("soffice"),
+        # ---- clipboard ----
+        "xclip": shutil.which("xclip"),
+        "wl-paste": shutil.which("wl-paste"),
+        "wl-copy": shutil.which("wl-copy"),
     }
     return EnvironmentInfo(
         platform=system,

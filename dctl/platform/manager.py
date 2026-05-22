@@ -20,6 +20,7 @@ from dctl.platform.linux.input import (
     ydotool_click_args,
     ydotool_key_args,
     ydotool_mousemove_args,
+    ydotool_scroll_args,
 )
 from dctl.platform.linux.launch import launch_target, list_launchable, open_target
 from dctl.platform.linux.windowing import WindowRecord, XdotoolWindowProvider
@@ -152,21 +153,21 @@ class DesktopManager(DesktopBackend):
                 return self._click_center(match.serialized, focus_only=True)
         return self._window_provider().focus_window(match.raw.window_id)
 
-    def click(self, selector_text: str) -> dict[str, Any]:
+    def click(self, selector_text: str, button: str = "left", double: bool = False) -> dict[str, Any]:
         if self.env.platform == "darwin":
-            return self._macos_backend().click(selector_text)
+            return self._macos_backend().click(selector_text, button=button, double=double)
         if self.env.platform == "windows":
-            return self._windows_backend().click(selector_text)
+            return self._windows_backend().click(selector_text, button=button, double=double)
         if self._is_coordinate_selector(selector_text):
-            return self._pointer_click(selector_text)
+            return self._pointer_click(selector_text, button=button, double=double)
         match = self._resolve_single(selector_text)
         if match.kind == "accessible":
             try:
                 return self._accessibility_provider().click(match.raw)
             except DctlError:
-                return self._click_center(match.serialized)
+                return self._click_center(match.serialized, button=button, double=double)
         self._window_provider().focus_window(match.raw.window_id)
-        return self._click_center(match.serialized)
+        return self._click_center(match.serialized, button=button, double=double)
 
     def type_text(self, text: str, selector_text: str | None = None) -> dict[str, Any]:
         if self.env.platform == "darwin":
@@ -213,18 +214,22 @@ class DesktopManager(DesktopBackend):
             return self._windows_backend().scroll(direction, amount)
         helper = self._input_helper()
         normalized = direction.strip().lower()
-        if helper != "xdotool":
-            raise DctlError(
-                "CAPABILITY_UNAVAILABLE",
-                "Scroll injection currently requires xdotool.",
-                suggestion="Use xdotool on X11/XWayland or extend the ydotool button mapping if needed.",
-            )
-        button = {"up": "4", "down": "5", "left": "6", "right": "7"}.get(normalized)
-        if button is None:
+        if normalized not in {"up", "down", "left", "right"}:
             raise DctlError("INVALID_SELECTOR", f"Unsupported scroll direction '{direction}'.")
-        for _ in range(max(amount, 1)):
-            self._run_helper([self.env.helpers["xdotool"], "click", button])
-        return {"helper": "xdotool", "direction": normalized, "amount": max(amount, 1)}
+        if helper == "xdotool":
+            button = {"up": "4", "down": "5", "left": "6", "right": "7"}[normalized]
+            for _ in range(max(amount, 1)):
+                self._run_helper([self.env.helpers["xdotool"], "click", button])
+            return {"helper": "xdotool", "direction": normalized, "amount": max(amount, 1)}
+        if helper == "ydotool":
+            args = [self.env.helpers["ydotool"], *ydotool_scroll_args(normalized, amount)]
+            self._run_helper(args)
+            return {"helper": "ydotool", "direction": normalized, "amount": max(amount, 1)}
+        raise DctlError(
+            "CAPABILITY_UNAVAILABLE",
+            "No supported scroll helper is available.",
+            suggestion="Install xdotool or ydotool.",
+        )
 
     def screenshot(
         self,
@@ -393,7 +398,7 @@ class DesktopManager(DesktopBackend):
     def _is_coordinate_selector(self, selector_text: str) -> bool:
         return selector_text.strip().startswith("@")
 
-    def _pointer_click(self, selector_text: str, focus_only: bool = False) -> dict[str, Any]:
+    def _pointer_click(self, selector_text: str, focus_only: bool = False, button: str = "left", double: bool = False) -> dict[str, Any]:
         selector = parse_selector(selector_text)
         coords_terms = [
             term
@@ -406,24 +411,25 @@ class DesktopManager(DesktopBackend):
         x, y = coords_terms[0].value
         helper = self._input_helper()
         if helper == "xdotool":
+            xdotool_btn = {"left": "1", "middle": "2", "right": "3"}.get(button, "1")
             args = [self.env.helpers["xdotool"], "mousemove", str(x), str(y)]
             if not focus_only:
-                args.extend(["click", "1"])
-            else:
-                args.extend(["mousedown", "1", "mouseup", "1"])
-            self._run_helper(args)
-            return {"helper": "xdotool", "x": x, "y": y, "focus_only": focus_only}
+                click_count = 2 if double else 1
+                for _ in range(click_count):
+                    self._run_helper([self.env.helpers["xdotool"], "click", xdotool_btn])
+            return {"helper": "xdotool", "x": x, "y": y, "button": button, "double": double, "focus_only": focus_only}
         if helper == "ydotool":
             self._run_helper([self.env.helpers["ydotool"], *ydotool_mousemove_args(x, y)])
-            self._run_helper([self.env.helpers["ydotool"], *ydotool_click_args("left")])
-            return {"helper": "ydotool", "x": x, "y": y, "focus_only": focus_only}
+            repeat = 2 if double else 1
+            self._run_helper([self.env.helpers["ydotool"], *ydotool_click_args(button, repeat=repeat)])
+            return {"helper": "ydotool", "x": x, "y": y, "button": button, "double": double, "focus_only": focus_only}
         raise DctlError(
             "CAPABILITY_UNAVAILABLE",
             "No pointer injection helper is available.",
             suggestion="Install and configure xdotool or ydotool.",
         )
 
-    def _click_center(self, element: dict[str, Any], focus_only: bool = False) -> dict[str, Any]:
+    def _click_center(self, element: dict[str, Any], focus_only: bool = False, button: str = "left", double: bool = False) -> dict[str, Any]:
         bounds = element.get("bounds")
         if not bounds:
             raise DctlError(
@@ -432,7 +438,7 @@ class DesktopManager(DesktopBackend):
             )
         x = bounds["x"] + bounds["width"] // 2
         y = bounds["y"] + bounds["height"] // 2
-        return self._pointer_click(f"@{x},{y}", focus_only=focus_only)
+        return self._pointer_click(f"@{x},{y}", focus_only=focus_only, button=button, double=double)
 
     def _inject_type(self, text: str) -> dict[str, Any]:
         helper = self._input_helper()

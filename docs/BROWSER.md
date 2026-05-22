@@ -35,7 +35,10 @@ dctl browser attach --port 9222        # Attach to a specific endpoint
 6. Perform the action (`type`, `click`, `press`, `eval`)
 7. Verify the result (`snapshot`, `text`, `dom`)
 
+`tabs` returns ranked candidates (`targetScore`) and a `recommendedTargetId`; session-based runs also keep a preferred tab so `active` resolves predictably after `open`/`activate`.
+
 Always verify after mutations. Do not assume a `type` succeeded without checking.
+Use `selector` before mutating commands when you need deterministic element targeting.
 
 ## Inspection Commands
 
@@ -45,19 +48,41 @@ Always verify after mutations. Do not assume a `type` succeeded without checking
 dctl browser snapshot active --session work
 ```
 
-Returns a high-level text representation of the page. Good for understanding what's visible and interactive. Use `--text-limit N` to cap output length (default 4000 chars).
+Returns a structured extraction of the current page without screenshots:
+
+- high-level visible text (`visibleText`)
+- semantic structure (`headings`, `landmarks`, `contentBlocks`, `interactions`)
+- detected math payloads (`latex`) from MathJax/KaTeX/MathML/TeX script nodes
+- detected visual structures (`visuals`) from visible SVG/canvas/image surfaces
+- quality diagnostics (`quality`) with explicit issue codes
+
+Use `--text-limit N` and `--max-items N` to control payload size.
+
+Use strict quality enforcement when you want fail-fast behavior:
+
+```bash
+dctl browser snapshot active --session work --strict --min-text 200 --max-text 12000
+```
+
+In strict mode, dctl raises an error if extraction quality checks detect problems (too little content, truncation, weak structure, etc.).
 
 ### DOM and Accessibility Tree
 
 ```bash
-dctl browser dom active --selector '#main' --depth 3 --session work
-dctl browser ax active --selector '#main' --session work
-dctl browser text active --selector '#main' --session work
+dctl browser dom active --selector '#main' --depth 3 --strict-selector --session work
+dctl browser ax active --selector '#main' --strict-selector --session work
+dctl browser text active --selector '#main' --strict-selector --session work
+dctl browser selector active '#main button' --sample-limit 10 --session work
+dctl browser actions active --query "submit" --role button --sample-limit 25 --session work
 ```
 
 - `dom` returns raw HTML structure
 - `ax` returns the browser's accessibility tree
 - `text` returns extracted text content
+- `selector` returns match counts, visibility/editability stats, and sample elements
+- `actions` returns machine-friendly clickable/actionable elements with stable `actionId` values for follow-up `click-action`
+
+`--strict-selector` makes `dom`/`ax`/`text`/`wait-selector` fail with `MULTIPLE_MATCHES` when the selector is ambiguous.
 
 ### Selection and Caret
 
@@ -77,11 +102,14 @@ dctl browser type active "Hello" --selector 'input[name="q"]' --clear --session 
 ```
 
 `--clear` clears the existing content before typing. Always specify `--selector` to target the right element.
+For `type` and `click`, selectors must resolve to exactly one element; ambiguous selectors now fail with `MULTIPLE_MATCHES`.
 
 ### Click
 
 ```bash
 dctl browser click active 'button[aria-label="Send"]' --session work
+dctl browser click-action active 0 --query "Send" --role button --session work
+dctl browser act active --query "Send" --role button --wait-selector '.toast-success' --snapshot --session work
 ```
 
 ### Press
@@ -98,9 +126,10 @@ Key combos use `+` as separator. `Enter` is mapped to a paragraph separator in e
 ```bash
 dctl browser eval active "document.title" --session work
 dctl browser eval active "document.querySelector('input').value" --session work
+dctl browser eval active "({ready: document.readyState, href: location.href})" --return-by-value --session work
 ```
 
-Use `--no-await-promise` if the expression returns a promise you don't want to wait for.
+Use `--no-await-promise` if the expression returns a promise you don't want to wait for. Use `--return-by-value` to request plain JSON values instead of remote object handles when possible.
 
 ## Batch Mode
 
@@ -115,7 +144,17 @@ dctl browser batch active '[
 ]' --session work
 ```
 
-Supported operations: `activate`, `click`, `type`, `press`, `eval`, `wait-selector`, `wait-url`, `snapshot`, `text`, `selection`, `caret`.
+Supported operations: `activate`, `click`, `type`, `press`, `eval`, `actions`, `click-action`, `act`, `wait-selector`, `wait-url`, `snapshot`, `text`, `dom`, `ax`, `selector`, `selection`, `caret`.
+
+Batch execution resolves the page target once and reuses it across operations, which reduces repeated tab-resolution overhead for simple browse flows.
+
+`snapshot` batch ops also accept `text_limit`, `max_items`, `min_text`, `max_text`, and `strict`.
+`text` / `dom` / `ax` / `wait-selector` batch ops accept `strict_selector`.
+`selector` batch ops accept `sample_limit`.
+`actions` batch ops accept `query`, `role`, and `sample_limit`; `click-action` batch ops require `action_id` (and can include `query`/`role` filters).
+`act` batch ops accept `query`, `role`, optional `action_id`, optional `wait_selector` / `wait_url`, and optional snapshot flags (`snapshot`, `snapshot_strict`, `snapshot_text_limit`, `snapshot_max_items`, `snapshot_min_text`, `snapshot_max_text`).
+
+Batch responses include `timingsMs` for total execution and per-op latency.
 
 ## Gmail Workflow
 
@@ -147,7 +186,7 @@ For detailed document structure inspection, use `dom` or `ax` before editing.
 
 ```bash
 dctl browser wait-url active "docs.google.com" --timeout 10 --session work
-dctl browser wait-selector active 'textarea' --timeout 5 --session work
+dctl browser wait-selector active 'textarea' --timeout 5 --strict-selector --session work
 ```
 
 Use these after navigation or clicks that trigger page transitions. They poll until the condition is met or the timeout expires.

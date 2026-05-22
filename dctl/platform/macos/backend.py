@@ -134,17 +134,17 @@ class MacOSBackend:
             return {"locator": match.serialized["locator"], "focused": True, "backend": "ax"}
         return self._click_serialized(match.serialized, focus_only=True)
 
-    def click(self, selector_text: str) -> dict[str, Any]:
+    def click(self, selector_text: str, button: str = "left", double: bool = False) -> dict[str, Any]:
         if selector_text.strip().startswith("@"):
-            return self._coordinate_click(selector_text)
+            return self._coordinate_click(selector_text, button=button, double=double)
         match = self._resolve_single(selector_text)
         if match.kind == "window":
             self._focus_window(match.raw["pid"], match.raw["window_id"])
-            return self._click_serialized(match.serialized)
+            return self._click_serialized(match.serialized, button=button, double=double)
         for action in (self.AS.kAXPressAction, self.AS.kAXConfirmAction, self.AS.kAXPickAction):
             if self._perform_action(match.raw, action):
                 return {"locator": match.serialized["locator"], "action": str(action), "backend": "ax"}
-        return self._click_serialized(match.serialized)
+        return self._click_serialized(match.serialized, button=button, double=double)
 
     def type_text(self, text: str, selector_text: str | None = None) -> dict[str, Any]:
         if selector_text:
@@ -502,7 +502,7 @@ class MacOSBackend:
             return {"focused": True, "pid": pid, "window_id": window_id, "backend": "appkit"}
         raise DctlError("ACTION_NOT_SUPPORTED", "Could not activate the target application.")
 
-    def _coordinate_click(self, selector_text: str, focus_only: bool = False) -> dict[str, Any]:
+    def _coordinate_click(self, selector_text: str, focus_only: bool = False, button: str = "left", double: bool = False) -> dict[str, Any]:
         selector = parse_selector(selector_text)
         coords_terms = [
             term
@@ -517,19 +517,29 @@ class MacOSBackend:
         move = self.Quartz.CGEventCreateMouseEvent(None, self.Quartz.kCGEventMouseMoved, point, self.Quartz.kCGMouseButtonLeft)
         self.Quartz.CGEventPost(self.Quartz.kCGHIDEventTap, move)
         if not focus_only:
-            down = self.Quartz.CGEventCreateMouseEvent(None, self.Quartz.kCGEventLeftMouseDown, point, self.Quartz.kCGMouseButtonLeft)
-            up = self.Quartz.CGEventCreateMouseEvent(None, self.Quartz.kCGEventLeftMouseUp, point, self.Quartz.kCGMouseButtonLeft)
-            self.Quartz.CGEventPost(self.Quartz.kCGHIDEventTap, down)
-            self.Quartz.CGEventPost(self.Quartz.kCGHIDEventTap, up)
-        return {"x": x, "y": y, "backend": "quartz", "focus_only": focus_only}
+            event_map = {
+                "left": (self.Quartz.kCGEventLeftMouseDown, self.Quartz.kCGEventLeftMouseUp, self.Quartz.kCGMouseButtonLeft),
+                "right": (self.Quartz.kCGEventRightMouseDown, self.Quartz.kCGEventRightMouseUp, self.Quartz.kCGMouseButtonRight),
+                "middle": (self.Quartz.kCGEventOtherMouseDown, self.Quartz.kCGEventOtherMouseUp, self.Quartz.kCGMouseButtonCenter),
+            }
+            down_type, up_type, btn = event_map.get(button, event_map["left"])
+            clicks = 2 if double else 1
+            for i in range(clicks):
+                down = self.Quartz.CGEventCreateMouseEvent(None, down_type, point, btn)
+                up = self.Quartz.CGEventCreateMouseEvent(None, up_type, point, btn)
+                self.Quartz.CGEventPost(self.Quartz.kCGHIDEventTap, down)
+                self.Quartz.CGEventPost(self.Quartz.kCGHIDEventTap, up)
+                if double and i == 0:
+                    time.sleep(0.05)
+        return {"x": x, "y": y, "backend": "quartz", "button": button, "double": double, "focus_only": focus_only}
 
-    def _click_serialized(self, element: dict[str, Any], focus_only: bool = False) -> dict[str, Any]:
+    def _click_serialized(self, element: dict[str, Any], focus_only: bool = False, button: str = "left", double: bool = False) -> dict[str, Any]:
         bounds = element.get("bounds")
         if not bounds:
             raise DctlError("ACTION_NOT_SUPPORTED", "Element does not expose bounds for coordinate fallback.")
         x = bounds["x"] + bounds["width"] // 2
         y = bounds["y"] + bounds["height"] // 2
-        return self._coordinate_click(f"@{x},{y}", focus_only=focus_only)
+        return self._coordinate_click(f"@{x},{y}", focus_only=focus_only, button=button, double=double)
 
     def _post_text(self, text: str) -> None:
         source = self.Quartz.CGEventSourceCreate(self.Quartz.kCGEventSourceStateHIDSystemState)

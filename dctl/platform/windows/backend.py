@@ -159,17 +159,16 @@ class WindowsBackend:
             return self._win32().focus_window(match.raw.hwnd)
         return self._click_center(match.serialized, focus_only=True)
 
-    def click(self, selector_text: str) -> dict[str, Any]:
+    def click(self, selector_text: str, button: str = "left", double: bool = False) -> dict[str, Any]:
         if self._is_coordinate_selector(selector_text):
-            return self._coordinate_click(selector_text)
+            return self._coordinate_click(selector_text, button=button, double=double)
         match = self._resolve_single(selector_text)
         if match.kind == "accessible":
             try:
                 return self._uia().click(match.raw)
             except DctlError:
                 pass
-        # Fallback: coordinate click at element center
-        return self._click_center(match.serialized)
+        return self._click_center(match.serialized, button=button, double=double)
 
     def type_text(self, text: str, selector_text: str | None = None) -> dict[str, Any]:
         if selector_text:
@@ -191,7 +190,7 @@ class WindowsBackend:
         self._input().press_key(combo)
         return {"combo": combo, "backend": "sendinput"}
 
-    def scroll(self, direction: str, amount: int = 3) -> dict[str, Any]:
+    def scroll(self, direction: str, amount: int = 1) -> dict[str, Any]:
         self._input().scroll(direction, amount)
         return {"direction": direction, "amount": amount, "backend": "sendinput"}
 
@@ -263,7 +262,7 @@ class WindowsBackend:
             )
         return matches[0]
 
-    def _coordinate_click(self, selector_text: str, focus_only: bool = False) -> dict[str, Any]:
+    def _coordinate_click(self, selector_text: str, focus_only: bool = False, button: str = "left", double: bool = False) -> dict[str, Any]:
         selector = parse_selector(selector_text)
         coords = [t for g in selector.groups for t in g if t.kind == "coords"]
         if not coords:
@@ -271,10 +270,10 @@ class WindowsBackend:
         x, y = coords[0].value
         self._input().mouse_move(x, y)
         if not focus_only:
-            self._input().mouse_click(x, y)
-        return {"x": x, "y": y, "backend": "sendinput", "focus_only": focus_only}
+            self._input().mouse_click(x, y, button=button, double=double)
+        return {"x": x, "y": y, "backend": "sendinput", "button": button, "double": double, "focus_only": focus_only}
 
-    def _click_center(self, element: dict[str, Any], focus_only: bool = False) -> dict[str, Any]:
+    def _click_center(self, element: dict[str, Any], focus_only: bool = False, button: str = "left", double: bool = False) -> dict[str, Any]:
         bounds = element.get("bounds")
         if not bounds:
             raise DctlError(
@@ -283,7 +282,7 @@ class WindowsBackend:
             )
         x = bounds["x"] + bounds["width"] // 2
         y = bounds["y"] + bounds["height"] // 2
-        return self._coordinate_click(f"@{x},{y}", focus_only=focus_only)
+        return self._coordinate_click(f"@{x},{y}", focus_only=focus_only, button=button, double=double)
 
     def _resolve_hwnd(self, window: str) -> int:
         if window.isdigit():

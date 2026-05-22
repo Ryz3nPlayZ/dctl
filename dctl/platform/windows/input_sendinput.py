@@ -153,7 +153,7 @@ class Win32InputProvider:
             if double:
                 time.sleep(0.05)
 
-    def scroll(self, direction: str, amount: int = 3) -> None:
+    def scroll(self, direction: str, amount: int = 1) -> None:
         """Inject scroll wheel events."""
         direction = direction.strip().lower()
         if direction in ("up", "down"):
