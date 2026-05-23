@@ -17,12 +17,14 @@ class EnvironmentInfo:
     wayland_display: str | None
     helpers: dict[str, str | None]
     os_version: str = ""
+    desktop: str | None = None
 
     def to_meta(self) -> dict[str, Any]:
         return {
             "platform": self.platform,
             "session_type": self.session_type,
             "os_version": self.os_version,
+            "desktop": self.desktop,
         }
 
 
@@ -70,6 +72,7 @@ def detect_environment() -> EnvironmentInfo:
         wayland_display=os.environ.get("WAYLAND_DISPLAY"),
         helpers=helpers,
         os_version=os_version,
+        desktop=os.environ.get("XDG_CURRENT_DESKTOP"),
     )
 
 

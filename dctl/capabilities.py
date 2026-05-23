@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import shutil
 from typing import Any
 
 from dctl.platform.detect import EnvironmentInfo, command_ok
@@ -31,6 +32,18 @@ def _linux_atspi_bus_available(env: EnvironmentInfo) -> bool:
     )
 
 
+def _kwin_available(env: EnvironmentInfo) -> bool:
+    desktop = (env.desktop or "").upper()
+    if "KDE" not in desktop:
+        return False
+    if env.session_type != "wayland":
+        return False
+    qdbus = shutil.which("qdbus6") or shutil.which("qdbus")
+    if not qdbus:
+        return False
+    return command_ok([qdbus, "org.kde.KWin", "/KWin", "currentDesktop"])
+
+
 def collect_capabilities(env: EnvironmentInfo) -> dict[str, Any]:
     providers: dict[str, str | None] = {
         "accessibility": None,
@@ -58,6 +71,7 @@ def collect_capabilities(env: EnvironmentInfo) -> dict[str, Any]:
         atspi_bus = _linux_atspi_bus_available(env) if atspi_importable else False
         xdotool_usable = probe_xdotool(env.helpers.get("xdotool"))
         ydotool_usable = probe_ydotool(env.helpers.get("ydotool"))
+        kwin_usable = _kwin_available(env)
         websockets_importable = _module_importable("websockets")
         docx_importable = _module_importable("docx")
         openpyxl_importable = _module_importable("openpyxl")
@@ -72,6 +86,7 @@ def collect_capabilities(env: EnvironmentInfo) -> dict[str, Any]:
         diagnostics["checks"]["atspi_bus"] = atspi_bus
         diagnostics["checks"]["xdotool_usable"] = xdotool_usable
         diagnostics["checks"]["ydotool_usable"] = ydotool_usable
+        diagnostics["checks"]["kwin_usable"] = kwin_usable
         diagnostics["checks"]["websockets_importable"] = websockets_importable
         diagnostics["checks"]["docx_importable"] = docx_importable
         diagnostics["checks"]["openpyxl_importable"] = openpyxl_importable
@@ -101,7 +116,9 @@ def collect_capabilities(env: EnvironmentInfo) -> dict[str, Any]:
         else:
             warnings.append("No input injection helper is installed.")
 
-        if providers["windowing"] is None and providers["accessibility"] is not None:
+        if kwin_usable:
+            providers["windowing"] = "kwin"
+        elif providers["windowing"] is None and providers["accessibility"] is not None:
             providers["windowing"] = "atspi"
 
         if env.helpers.get("xdg-open"):

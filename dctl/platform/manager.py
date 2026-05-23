@@ -24,6 +24,7 @@ from dctl.platform.linux.input import (
 )
 from dctl.platform.linux.launch import launch_target, list_launchable, open_target
 from dctl.platform.linux.windowing import WindowRecord, XdotoolWindowProvider
+from dctl.platform.linux.windowing_kwin import KWinWindowProvider, KWinWindowRecord
 from dctl.platform.macos import MacOSBackend
 from dctl.selector import parse_selector
 
@@ -41,6 +42,7 @@ class DesktopManager(DesktopBackend):
         self._capabilities = collect_capabilities(self.env)
         self._atspi: LinuxAtspiProvider | None = None
         self._windowing: XdotoolWindowProvider | None = None
+        self._kwin: KWinWindowProvider | None = None
         self._macos: MacOSBackend | None = None
         self._windows: Any | None = None
 
@@ -55,6 +57,8 @@ class DesktopManager(DesktopBackend):
             return self._macos_backend().list_apps()
         if self.env.platform == "windows":
             return self._windows_backend().list_apps()
+        if self._has_kwin():
+            return [app.to_dict() for app in self._kwin_provider().list_apps()]
         if self._has_accessibility():
             return [app.to_dict() for app in self._accessibility_provider().list_apps()]
         if self._has_windowing():
@@ -66,6 +70,8 @@ class DesktopManager(DesktopBackend):
             return self._macos_backend().list_windows()
         if self.env.platform == "windows":
             return self._windows_backend().list_windows()
+        if self._has_kwin():
+            return [window.to_dict() for window in self._kwin_provider().list_windows()]
         if self._has_windowing():
             return [window.to_dict() for window in self._window_provider().list_windows()]
         if self._has_accessibility():
@@ -146,6 +152,8 @@ class DesktopManager(DesktopBackend):
         if self._is_coordinate_selector(selector_text):
             return self._pointer_click(selector_text, focus_only=True)
         match = self._resolve_single(selector_text)
+        if match.kind == "kwin":
+            return self._kwin_provider().focus_window(match.raw.kwin_id)
         if match.kind == "accessible":
             try:
                 return self._accessibility_provider().focus(match.raw)
@@ -161,6 +169,9 @@ class DesktopManager(DesktopBackend):
         if self._is_coordinate_selector(selector_text):
             return self._pointer_click(selector_text, button=button, double=double)
         match = self._resolve_single(selector_text)
+        if match.kind == "kwin":
+            self._kwin_provider().focus_window(match.raw.kwin_id)
+            return self._click_center(match.serialized, button=button, double=double)
         if match.kind == "accessible":
             try:
                 return self._accessibility_provider().click(match.raw)
@@ -179,6 +190,9 @@ class DesktopManager(DesktopBackend):
                 self._pointer_click(selector_text, focus_only=True)
                 return self._inject_type(text)
             match = self._resolve_single(selector_text)
+            if match.kind == "kwin":
+                self._kwin_provider().focus_window(match.raw.kwin_id)
+                return self._inject_type(text)
             if match.kind == "accessible":
                 try:
                     return self._accessibility_provider().set_text(match.raw, text)
@@ -338,6 +352,14 @@ class DesktopManager(DesktopBackend):
         matches: list[SearchMatch] = []
         seen: set[str] = set()
 
+        if self._has_kwin():
+            for record in self._kwin_provider().find_elements(selector):
+                key = record.serialized["locator"] or record.serialized["id"]
+                if key in seen:
+                    continue
+                seen.add(key)
+                matches.append(SearchMatch(kind="kwin", serialized=record.serialized, raw=record))
+
         if self._has_accessibility():
             for record in self._accessibility_provider().find_elements(selector):
                 key = record.serialized["locator"] or record.serialized["id"]
@@ -391,6 +413,9 @@ class DesktopManager(DesktopBackend):
 
     def _has_windowing(self) -> bool:
         return self._capabilities["providers"].get("windowing") == "xdotool"
+
+    def _has_kwin(self) -> bool:
+        return self._capabilities["providers"].get("windowing") == "kwin"
 
     def _input_helper(self) -> str | None:
         return self._capabilities["providers"].get("input")
@@ -572,6 +597,18 @@ class DesktopManager(DesktopBackend):
         if self._windowing is None:
             self._windowing = XdotoolWindowProvider(self.env.helpers["xdotool"])
         return self._windowing
+
+    def _kwin_provider(self) -> KWinWindowProvider:
+        self._require_linux()
+        if not self._has_kwin():
+            raise DctlError(
+                "CAPABILITY_UNAVAILABLE",
+                "KWin scripting is not available in this session.",
+                suggestion="Ensure KDE Plasma is running on Wayland.",
+            )
+        if self._kwin is None:
+            self._kwin = KWinWindowProvider()
+        return self._kwin
 
     def _require_linux(self) -> None:
         if self.env.platform not in ("linux",):

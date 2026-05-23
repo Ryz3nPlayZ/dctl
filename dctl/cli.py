@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from datetime import datetime, timezone
 from typing import Any
 
@@ -908,6 +909,16 @@ def dispatch(args: argparse.Namespace, manager: DesktopManager) -> Any:
 
 
 def main(argv: list[str] | None = None) -> int:
+    if argv is None:
+        argv = sys.argv[1:]
+    if argv and argv[0] == "--version":
+        from importlib.metadata import version as pkg_version
+        try:
+            v = pkg_version("dctl")
+        except Exception:
+            v = "0.1.0"
+        print(f"dctl {v}")
+        return 0
     parser = build_parser()
     args = parser.parse_args(argv)
     manager = DesktopManager()
