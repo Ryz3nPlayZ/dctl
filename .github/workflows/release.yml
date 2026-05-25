@@ -1,0 +1,86 @@
+name: Build and Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            platform: macos
+            arch: arm64
+          - os: macos-13
+            platform: macos
+            arch: x86_64
+          - os: ubuntu-latest
+            platform: linux
+            arch: x86_64
+          - os: windows-latest
+            platform: windows
+            arch: x86_64
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install pyinstaller
+          pip install .
+          # Platform extras
+          pip install ".[macos]" || true
+          pip install ".[windows]" || true
+
+      - name: Build binary (macOS/Linux)
+        if: runner.os != 'Windows'
+        run: pyinstaller dctl.spec
+
+      - name: Build binary (Windows)
+        if: runner.os == 'Windows'
+        run: pyinstaller dctl.spec
+
+      - name: Smoke test
+        run: |
+          ./dist/dctl/dctl --version
+          ./dist/dctl/dctl capabilities
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dctl-${{ matrix.platform }}-${{ matrix.arch }}
+          path: dist/dctl/
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Create archives
+        run: |
+          cd artifacts
+          for dir in dctl-*/; do
+            name="${dir%/}"
+            tar czf "${name}.tar.gz" -C "$dir" .
+          done
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*.tar.gz
+          generate_release_notes: true

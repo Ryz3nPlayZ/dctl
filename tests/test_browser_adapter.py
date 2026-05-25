@@ -559,6 +559,17 @@ class BrowserAdapterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             class FakeProcess:
                 pid = 4242
+                returncode = 0
+                args = []
+                stdin = None
+                stdout = None
+                stderr = None
+                def __enter__(self): return self
+                def __exit__(self, *args): pass
+                def kill(self): pass
+                def poll(self): return self.returncode
+                def communicate(self, *a, **kw): return (b"", b"")
+                def wait(self, **kw): return self.returncode
 
             with (
                 patch.dict("os.environ", {"DCTL_BROWSER_HOME": tmpdir}),

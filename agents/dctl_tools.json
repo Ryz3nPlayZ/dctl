@@ -56,7 +56,7 @@
           },
           "combo": {
             "type": "string",
-            "description": "The key combination to press (e.g., 'ctrl+c', 'win+r'). Used with action='key'."
+            "description": "The key combination to press (e.g., 'ctrl+c', 'cmd+s'). Used with action='key'."
           },
           "direction": {
             "type": "string",
@@ -69,7 +69,9 @@
             "description": "Number of scroll increments."
           },
           "x": { "type": "integer", "description": "X coordinate for 'describe'." },
-          "y": { "type": "integer", "description": "Y coordinate for 'describe'." }
+          "y": { "type": "integer", "description": "Y coordinate for 'describe'." },
+          "output": { "type": "string", "description": "Output file path for screenshot." },
+          "region": { "type": "string", "description": "Screenshot region as x,y,w,h." }
         },
         "required": ["action"]
       }
@@ -82,20 +84,20 @@
         "properties": {
           "action": {
             "type": "string",
-            "enum": ["start", "tabs", "targets", "active-tab", "open", "activate", "close", "ax", "dom", "text", "selector", "actions", "selection", "caret", "click", "click-action", "act", "type", "press", "eval", "send", "wait-url", "wait-selector", "snapshot", "batch"],
-            "description": "Browser action. Use `actions` + `click-action` for semantic clicking, `selector` for deterministic CSS diagnostics, and `snapshot` for structured page extraction."
+            "enum": ["start", "stop", "sessions", "session-info", "discover", "attach", "version", "tabs", "targets", "active-tab", "open", "activate", "close", "ax", "dom", "text", "selector", "actions", "selection", "caret", "click", "click-action", "act", "type", "press", "eval", "send", "wait-url", "wait-selector", "snapshot", "batch"],
+            "description": "Browser action. 'start'/'stop' manage browser processes; 'sessions' lists named sessions; 'discover' finds existing debug-enabled browsers; 'snapshot' extracts structured page content; 'actions' lists clickable elements; 'act' combines actions+click+optional snapshot in one call."
           },
           "target": {
             "type": "string",
-            "description": "The target tab/page ID or index. Required for most actions except 'start' and 'tabs'."
+            "description": "The target tab/page ID or 'active'. Required for most actions except 'start', 'tabs', 'sessions', 'discover'."
           },
           "selector": {
             "type": "string",
-            "description": "CSS selector for DOM actions or AX selector."
+            "description": "CSS selector for DOM actions."
           },
           "url": {
             "type": "string",
-            "description": "URL to navigate to."
+            "description": "URL to navigate to (for 'start' and 'open')."
           },
           "text": {
             "type": "string",
@@ -103,11 +105,40 @@
           },
           "expression": {
             "type": "string",
-            "description": "JavaScript expression to evaluate in the page context."
+            "description": "JavaScript expression to evaluate."
           },
           "session": {
             "type": "string",
-            "description": "Optional session name for persistent browser state."
+            "description": "Named session for persistent browser state."
+          },
+          "action_id": {
+            "type": "integer",
+            "description": "Action ID from 'actions' list, used with 'click-action'."
+          },
+          "query": {
+            "type": "string",
+            "description": "Search query to filter actions by label text."
+          },
+          "role": {
+            "type": "string",
+            "description": "Filter actions by ARIA role."
+          },
+          "combo": {
+            "type": "string",
+            "description": "Key combo for 'press' action (e.g., 'Enter', 'ctrl+a')."
+          },
+          "method": {
+            "type": "string",
+            "description": "CDP method name for 'send' action."
+          },
+          "operations_json": {
+            "type": "string",
+            "description": "JSON array of operations for 'batch' action."
+          },
+          "headless": {
+            "type": "boolean",
+            "default": false,
+            "description": "Run browser in headless mode."
           }
         },
         "required": ["action"]
@@ -115,19 +146,25 @@
     },
     {
       "name": "dctl_office",
-      "description": "Semantic document and spreadsheet editing (Word/Excel/LibreOffice). Use this to read paragraphs, edit cells, append text, or replace content in documents without a GUI. Supports .docx and .xlsx files.",
+      "description": "Semantic document and spreadsheet editing (Word/Excel/LibreOffice). Use this to read paragraphs, edit cells, append text, answer questions in forms, or replace content in documents without a GUI. Supports .docx and .xlsx files, and live LibreOffice control via UNO.",
       "parameters": {
         "type": "object",
         "properties": {
           "type": {
             "type": "string",
             "enum": ["word", "excel", "libreoffice"],
-            "description": "The type of document or editor backend."
+            "description": "The document type or editor backend. 'word' for .docx, 'excel' for .xlsx, 'libreoffice' for live LibreOffice control."
           },
           "action": {
             "type": "string",
-            "enum": ["inspect", "read", "paragraphs", "append", "set-paragraph", "replace", "sheets", "write-cell", "write-range", "fill-table"],
-            "description": "The editing action."
+            "enum": [
+              "inspect", "read", "paragraphs", "append", "insert-before", "set-paragraph", "replace", "backup", "diff", "worksheet-map", "answer-question", "answer-all", "fill-table",
+              "sheets", "write-cell", "write-range", "locate-cell", "fill-cell",
+              "lo-start", "lo-stop", "lo-docs", "lo-open", "lo-info", "lo-save", "lo-close",
+              "lo-writer-text", "lo-writer-paragraphs", "lo-writer-append", "lo-writer-set",
+              "lo-calc-sheets", "lo-calc-read", "lo-calc-write-cell", "lo-calc-write-range"
+            ],
+            "description": "The editing action. Word: inspect/read/paragraphs/append/insert-before/set-paragraph/replace/backup/diff/worksheet-map/answer-question/answer-all/fill-table. Excel: inspect/sheets/read/write-cell/write-range/backup/diff/worksheet-map/locate-cell/fill-cell/fill-table. LibreOffice: lo-start/lo-stop/lo-docs/lo-open/lo-info/lo-save/lo-close/lo-writer-text/lo-writer-paragraphs/lo-writer-append/lo-writer-set/lo-calc-sheets/lo-calc-read/lo-calc-write-cell/lo-calc-write-range."
           },
           "path": {
             "type": "string",
@@ -135,28 +172,45 @@
           },
           "text": {
             "type": "string",
-            "description": "Text content to insert or append."
+            "description": "Text content to insert, append, or use as answer."
           },
           "index": {
             "type": "integer",
-            "description": "Paragraph or element index."
+            "description": "Paragraph index for insert-before or set-paragraph."
           },
           "sheet": {
             "type": "string",
-            "description": "Sheet name for Excel/Calc."
+            "description": "Sheet name for Excel/Calc operations."
           },
           "cell": {
             "type": "string",
-            "description": "Cell reference (e.g., 'A1')."
+            "description": "Cell reference (e.g., 'A1') for write-cell."
+          },
+          "range": {
+            "type": "string",
+            "description": "Cell range (e.g., 'A1:C3') for read or write-range."
           },
           "value": {
             "type": "string",
             "description": "Value to write to a cell."
           },
-          "find": { "type": "string" },
-          "replace": { "type": "string" }
+          "find": { "type": "string", "description": "Text to find for replace action." },
+          "replace": { "type": "string", "description": "Replacement text for replace action." },
+          "against": { "type": "string", "description": "Path to backup file for diff action." },
+          "question": { "type": "string", "description": "Question text for answer-question action." },
+          "answer": { "type": "string", "description": "Answer text for answer-question action." },
+          "answers_json": { "type": "string", "description": "JSON array of {question, answer} objects for answer-all action." },
+          "entries_json": { "type": "string", "description": "JSON array of fill entries for fill-table action." },
+          "row_label": { "type": "string", "description": "Row header label for locate-cell/fill-cell." },
+          "column_label": { "type": "string", "description": "Column header label for locate-cell/fill-cell." },
+          "table": { "type": "string", "description": "Table name for fill-table/fill-cell when multiple tables exist." },
+          "document": { "type": "string", "description": "Document name or path for LibreOffice actions." },
+          "port": { "type": "integer", "description": "LibreOffice UNO port (default 2002)." },
+          "pid": { "type": "integer", "description": "Process ID for lo-stop." },
+          "headless": { "type": "boolean", "description": "Start LibreOffice in headless mode." },
+          "rows_json": { "type": "string", "description": "JSON array of row arrays for write-range." }
         },
-        "required": ["type", "action", "path"]
+        "required": ["type", "action"]
       }
     }
   ]

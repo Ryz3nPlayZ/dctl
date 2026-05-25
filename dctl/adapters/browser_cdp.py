@@ -299,6 +299,8 @@ def _classify_browser_app(command: str) -> str | None:
 
 
 def _discover_browser_processes(proc_root: str = "/proc") -> list[dict[str, Any]]:
+    if proc_root != "/proc":
+        return _discover_browser_processes_linux(proc_root)
     if sys.platform == "linux":
         return _discover_browser_processes_linux(proc_root)
     if sys.platform == "darwin":

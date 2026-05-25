@@ -712,6 +712,9 @@ class MacOSBackend:
         roots = [
             Path("/Applications"),
             Path("/System/Applications"),
+            Path("/Applications/Utilities"),
+            Path("/System/Library/CoreServices/Applications"),
+            Path("/System/Library/CoreServices"),
             Path.home() / "Applications",
         ]
         bundles: list[Path] = []

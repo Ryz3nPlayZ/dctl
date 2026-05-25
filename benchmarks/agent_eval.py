@@ -21,53 +21,50 @@ def run_dctl(args):
 def agent_self_eval():
     runner = BenchmarkRunner()
     session = runner.start_session("agent_web_search_eval")
-    
+
     # Step 1: Start Browser
     print("Agent: Starting browser...")
     out, dur, size, status = run_dctl(["browser", "start", "--headless", "--session", "eval-session"])
     runner.record_step(session, "browser start", dur, size, status)
-    
+
     # Step 2: Open Wikipedia
     print("Agent: Opening Wikipedia...")
     out, dur, size, status = run_dctl(["browser", "open", "https://en.wikipedia.org", "--session", "eval-session"])
     runner.record_step(session, "browser open", dur, size, status)
-    
-    # Step 3: Find Search Box (Wait for page load)
-    time.sleep(2)
-    print("Agent: Finding search box...")
-    out, dur, size, status = run_dctl(["tree", "--app", "brave", "--role", "entry"])
-    runner.record_step(session, "tree --role entry", dur, size, status)
-    
-    # Step 4: Type into Search
+
+    # Step 3: Snapshot page to understand structure
+    print("Agent: Snapshotting page...")
+    out, dur, size, status = run_dctl(["browser", "wait-selector", "active", "#searchInput", "--session", "eval-session", "--timeout", "10"])
+    runner.record_step(session, "browser wait-selector #searchInput", dur, size, status)
+
+    # Step 4: Type into search via browser CDP
     print("Agent: Typing query...")
-    # Based on Wikipedia's structure, we usually look for 'Search Wikipedia'
-    out, dur, size, status = run_dctl(["type", "Antigravity", "--session", "eval-session"])
-    runner.record_step(session, "type", dur, size, status)
-    
-    # Step 5: Press Enter
+    out, dur, size, status = run_dctl(["browser", "type", "active", "Antigravity", "--selector", "#searchInput", "--clear", "--session", "eval-session"])
+    runner.record_step(session, "browser type search", dur, size, status)
+
+    # Step 5: Press Enter via browser CDP
     print("Agent: Pressing Enter...")
-    out, dur, size, status = run_dctl(["key", "Enter", "--session", "eval-session"])
-    runner.record_step(session, "key Enter", dur, size, status)
-    
-    # Step 6: Verify Page
-    time.sleep(2)
-    print("Agent: Verifying result...")
-    out, dur, size, status = run_dctl(["browser", "active-tab", "--session", "eval-session"])
-    runner.record_step(session, "browser active-tab", dur, size, status)
-    
+    out, dur, size, status = run_dctl(["browser", "press", "active", "Enter", "--session", "eval-session"])
+    runner.record_step(session, "browser press Enter", dur, size, status)
+
+    # Step 6: Wait for navigation and verify page
+    print("Agent: Waiting for results...")
+    out, dur, size, status = run_dctl(["browser", "wait-url", "active", "Antigravity", "--session", "eval-session", "--timeout", "10"])
+    runner.record_step(session, "browser wait-url Antigravity", dur, size, status)
+
     success = False
     try:
         data = json.loads(out)
-        title = data["data"]["target"]["title"]
-        print(f"Agent: Found page title: {title}")
-        if "Antigravity" in title or "Search results" in title:
+        url = data.get("data", {}).get("url", "")
+        print(f"Agent: Landed on: {url}")
+        if "Antigravity" in url:
             success = True
     except:
         pass
-        
+
     # Step 7: Cleanup
     run_dctl(["browser", "stop", "--session", "eval-session"])
-    
+
     runner.finalize(session, success)
 
 if __name__ == "__main__":

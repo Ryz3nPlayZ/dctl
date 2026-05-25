@@ -240,10 +240,11 @@ def collect_capabilities(env: EnvironmentInfo) -> dict[str, Any]:
 
         if ax_importable and accessibility_permission:
             providers["accessibility"] = "ax"
+        if quartz_importable:
             providers["input"] = "quartz"
-        elif ax_importable and not accessibility_permission:
-            warnings.append("Accessibility permission is not granted; semantic UI and input commands will fail.")
-        else:
+        if ax_importable and not accessibility_permission:
+            warnings.append("Accessibility permission is not granted; semantic UI commands (tree, element, read) will fail. Input commands (type, key, scroll) work via CGEvent without accessibility permission.")
+        elif not ax_importable:
             warnings.append("ApplicationServices PyObjC module is not available; AX commands will fail.")
 
         providers["clipboard"] = "pbpaste/pbcopy"
